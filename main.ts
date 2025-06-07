@@ -1,7 +1,6 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { join } from "https://deno.land/std@0.224.0/path/mod.ts";
-import { Kv } from "https://deno.land/x/fresh@1.6.0/server.ts"; // Not really for fresh, but an easy way to get Kv type
-import { decode as decodeBase64 } from "https://deno.land/std@0.224.0/encoding/base64.ts"; // For basic auth decoding
+// REMOVED: import { Kv } from "https://deno.land/x/fresh@1.6.0/server.ts";
 
 interface Webhook {
   id: string; // UUID for unique identification
@@ -11,48 +10,15 @@ interface Webhook {
   createdAt: string;
 }
 
-const kv = await Deno.openKv(); // Open Deno KV database
+// Use Deno.openKv() directly
+const kv = await Deno.openKv();
 
-// --- Configuration for HTTP Basic Auth ---
-// These should be set as environment variables in Deno Deploy
-const USERNAME = Deno.env.get("WEBHOOK_AUTH_USERNAME");
-const PASSWORD = Deno.env.get("WEBHOOK_AUTH_PASSWORD");
+// --- Configuration from Environment Variables ---
+const ADMIN_USERNAME = Deno.env.get("WEBHOOK_ADMIN_USERNAME");
+const ADMIN_PASSWORD = Deno.env.get("WEBHOOK_ADMIN_PASSWORD");
 
-if (!USERNAME || !PASSWORD) {
-  console.warn("WARNING: WEBHOOK_AUTH_USERNAME or WEBHOOK_AUTH_PASSWORD not set. The UI will not be password protected!");
-}
-
-// Function to handle HTTP Basic Authentication
-function authenticate(req: Request): Response | null {
-  if (!USERNAME || !PASSWORD) {
-    return null; // No authentication configured
-  }
-
-  const authHeader = req.headers.get("Authorization");
-
-  if (!authHeader || !authHeader.startsWith("Basic ")) {
-    return new Response("Unauthorized", {
-      status: 401,
-      headers: {
-        "WWW-Authenticate": 'Basic realm="Webhook Scheduler"',
-      },
-    });
-  }
-
-  const encodedCreds = authHeader.substring(6); // Remove "Basic "
-  const decodedCreds = new TextDecoder().decode(decodeBase64(encodedCreds));
-  const [reqUsername, reqPassword] = decodedCreds.split(":");
-
-  if (reqUsername === USERNAME && reqPassword === PASSWORD) {
-    return null; // Authentication successful
-  } else {
-    return new Response("Unauthorized", {
-      status: 401,
-      headers: {
-        "WWW-Authenticate": 'Basic realm="Webhook Scheduler"',
-      },
-    });
-  }
+if (!ADMIN_USERNAME || !ADMIN_PASSWORD) {
+  console.warn("WARNING: WEBHOOK_ADMIN_USERNAME or WEBHOOK_ADMIN_PASSWORD environment variables are not set. The UI will not be password protected!");
 }
 
 // --- Generic Webhook Pinger Function ---
@@ -64,10 +30,10 @@ async function pingWebhook(webhookUrl: string, name: string) {
   console.log(`Attempting to ping webhook: "${name}" at ${new Date().toISOString()}`);
   try {
     const response = await fetch(webhookUrl, {
-      method: 'POST', // Most webhooks expect POST requests
-      // You might add headers here if specific webhooks require them (e.g., Content-Type)
+      method: 'POST',
+      // You can add headers here if needed, e.g., for specific webhook services
       // headers: { 'Content-Type': 'application/json' },
-      // body: JSON.stringify({ message: "Scheduled trigger" }) // If a body is needed
+      // body: JSON.stringify({ event: 'scheduled_build' }), // Example body
     });
 
     if (response.ok) {
@@ -83,16 +49,16 @@ async function pingWebhook(webhookUrl: string, name: string) {
 // --- Deno.cron Job Registration ---
 async function setupCronJobs() {
   console.log("Setting up Deno cron jobs from KV...");
-  const iter = kv.list<Webhook>({ prefix: ["webhooks"] });
+  const iter = kv.list<Webhook>({ prefix: ["webhooks"] }); // Changed KV prefix
   for await (const entry of iter) {
-    const webhook = entry.value;
-    const cronName = `webhook_job_${webhook.id}`; // Unique name for cron dashboard
+    const hook = entry.value;
+    const cronName = `generic_webhook_${hook.id}`; // Changed cron name prefix
 
-    Deno.cron(cronName, webhook.schedule, async () => {
-      console.log(`Triggering scheduled webhook: ${webhook.name} (ID: ${webhook.id})`);
-      await pingWebhook(webhook.url, webhook.name);
+    Deno.cron(cronName, hook.schedule, async () => {
+      console.log(`Triggering scheduled webhook: ${hook.name} (ID: ${hook.id})`);
+      await pingWebhook(hook.url, hook.name);
     });
-    console.log(`  - Registered cron job: "${webhook.name}" (ID: ${webhook.id}) with schedule "${webhook.schedule}"`);
+    console.log(`  - Registered cron job: "${hook.name}" (ID: ${hook.id}) with schedule "${hook.schedule}"`);
   }
   console.log("Finished setting up Deno cron jobs.");
 }
@@ -100,14 +66,46 @@ async function setupCronJobs() {
 // Call this once on startup to register all cron jobs
 setupCronJobs();
 
+// --- HTTP Basic Authentication Middleware ---
+function basicAuth(req: Request): Response | null {
+  if (!ADMIN_USERNAME || !ADMIN_PASSWORD) {
+    // If auth is not configured, allow access
+    return null;
+  }
+
+  const authHeader = req.headers.get("Authorization");
+
+  if (!authHeader || !authHeader.startsWith("Basic ")) {
+    return new Response("Unauthorized", {
+      status: 401,
+      headers: {
+        "WWW-Authenticate": 'Basic realm="Webhook Scheduler"',
+      },
+    });
+  }
+
+  const encodedCreds = authHeader.substring(6); // "Basic ".length = 6
+  const decodedCreds = atob(encodedCreds);
+  const [username, password] = decodedCreds.split(":");
+
+  if (username === ADMIN_USERNAME && password === ADMIN_PASSWORD) {
+    return null; // Authentication successful, proceed
+  } else {
+    return new Response("Unauthorized", {
+      status: 401,
+      headers: {
+        "WWW-Authenticate": 'Basic realm="Webhook Scheduler"',
+      },
+    });
+  }
+}
+
 // --- HTTP Server for UI and KV Management ---
 async function handler(req: Request): Promise<Response> {
   const url = new URL(req.url);
 
-  // Apply basic authentication to all routes that are not static assets
-  // (Assuming static assets won't be exposed by Deno Deploy's default serving)
-  // For simplicity, we apply it to everything, then serve static assets if authenticated.
-  const authResponse = authenticate(req);
+  // Apply basic authentication to all routes (except perhaps public assets if you had any)
+  const authResponse = basicAuth(req);
   if (authResponse) {
     return authResponse;
   }
@@ -122,18 +120,18 @@ async function handler(req: Request): Promise<Response> {
       });
     } catch (error) {
       console.error("Error serving index.html:", error);
-      return new Response("Internal Server Error", { status: 500 });
+      return new Response("Internal Server Error: Could not load UI.", { status: 500 });
     }
   }
 
   // API to list all webhooks
   if (url.pathname === "/hooks" && req.method === "GET") {
-    const webhooks: Webhook[] = [];
+    const hooks: Webhook[] = [];
     const iter = kv.list<Webhook>({ prefix: ["webhooks"] });
     for await (const entry of iter) {
-      webhooks.push(entry.value);
+      hooks.push(entry.value);
     }
-    return new Response(JSON.stringify(webhooks), {
+    return new Response(JSON.stringify(hooks), {
       headers: { "Content-Type": "application/json" },
     });
   }
@@ -149,7 +147,7 @@ async function handler(req: Request): Promise<Response> {
       }
 
       const id = crypto.randomUUID();
-      const newWebhook: Webhook = {
+      const newHook: Webhook = {
         id,
         name: String(name),
         url: String(url),
@@ -157,9 +155,9 @@ async function handler(req: Request): Promise<Response> {
         createdAt: new Date().toISOString(),
       };
 
-      await kv.set(["webhooks", id], newWebhook);
+      await kv.set(["webhooks", id], newHook);
 
-      return new Response(JSON.stringify(newWebhook), {
+      return new Response(JSON.stringify(newHook), {
         status: 201,
         headers: { "Content-Type": "application/json" },
       });
