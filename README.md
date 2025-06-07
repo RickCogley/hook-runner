@@ -7,4 +7,3 @@ Access https://esolia-hook-runner.deno.dev, login with access credentials, then 
 * Hook URL
 * Cron schedule
 
-
