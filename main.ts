@@ -1,8 +1,8 @@
-// --- main.ts (Latest Corrected Version for Deno.cron "top-level only" error and croner module import) ---
+// --- main.ts (Latest Corrected Version for croner module API and cron.nextRun fix) ---
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { join } from "https://deno.land/std@0.224.0/path/mod.ts";
-import { Cron } from "https://deno.land/x/croner@8.1.2/dist/croner.js"; // CORRECTED: Updated import for croner module
+import { Cron } from "https://deno.land/x/croner@8.1.2/dist/croner.js"; // Updated import for croner module
 
 interface Webhook {
   id: string; // UUID for unique identification
@@ -29,9 +29,8 @@ Deno.cron("webhook-kv-scheduler", "* * * * *", async () => { // Runs every minut
     try {
       const cron = new Cron(hook.schedule);
 
-      // Get the next scheduled time that is *after* the start of the previous minute
-      const minuteAgo = new Date(now.getTime() - oneMinute);
-      const nextFromMinuteAgo = cron.next(minuteAgo);
+      // CORRECTED: Use cron.nextRun() to get the next scheduled date
+      const nextFromMinuteAgo = cron.nextRun(minuteAgo);
 
       // Check if the next scheduled time falls within the current minute (within a 5-second tolerance)
       // This helps trigger the webhook if it's due in the current minute.
