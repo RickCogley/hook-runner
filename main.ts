@@ -1,4 +1,4 @@
-// --- main.ts (Latest Correct Version) ---
+// --- main.ts (Latest Corrected Version for Deno.cron) ---
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { join } from "https://deno.land/std@0.224.0/path/mod.ts";
@@ -13,18 +13,35 @@ interface Webhook {
 
 const kv = await Deno.openKv(); // Open Deno KV database
 
+// --- TOP-LEVEL CRON JOB REGISTRATION ---
+// This section directly defines cron jobs at the top-level,
+// ensuring compliance with Deno.cron's strict requirements.
+console.log("Setting up Deno cron jobs from KV (top-level)...");
+const iter = kv.list<Webhook>({ prefix: ["webhooks"] });
+for await (const entry of iter) {
+  const hook = entry.value;
+  const cronName = `generic_webhook_${hook.id}`;
+
+  Deno.cron(cronName, hook.schedule, async () => {
+    console.log(`Triggering scheduled webhook: ${hook.name} (ID: ${hook.id})`);
+    await pingWebhook(hook.url, hook.name); // Ensure pingWebhook is defined before this loop if it were below.
+  });
+  console.log(`  - Registered cron job: "${hook.name}" (ID: ${hook.id}) with schedule "${hook.schedule}"`);
+}
+console.log("Finished setting up Deno cron jobs (top-level).");
+
 // --- Configuration from Environment Variables ---
 const ADMIN_USERNAME = Deno.env.get("WEBHOOK_ADMIN_USERNAME");
-const ADMIN_PASSWORD = Deno.env.get("WEBHOOK_ADMIN_PASSWORD");
+const ADMIN_PASSWORD = Deno.env.get("WEBHOOK_PASSWORD"); // Corrected to WEBHOOK_PASSWORD, as per previous naming
 const DD_PROJECT_ID = Deno.env.get("DD_PROJECT_ID");
 const DD_ACCESS_TOKEN = Deno.env.get("DD_ACCESS_TOKEN");
 
-// --- Global variables for asset metadata (will be populated dynamically from GitHub for index.html) ---
-const ENTRY_POINT_URL = `main.ts`; // CORRECTED: Just the file name relative to the project root
+// --- Global variables for asset metadata ---
+const ENTRY_POINT_URL = `main.ts`; // Corrected: Just the file name relative to the project root
 const REPO_RAW_BASE_URL = `https://raw.githubusercontent.com/eSolia/hook-runner/refs/heads/main/`;
 const INDEX_HTML_RAW_URL = `${REPO_RAW_BASE_URL}static/index.html`;
 
-// --- Utility function to calculate SHA-256 hash (still useful for general purpose, not directly for API asset in this deployment method) ---
+// --- Utility function to calculate SHA-256 hash ---
 async function sha256(data: Uint8Array): Promise<string> {
     const hashBuffer = await crypto.subtle.digest('SHA-256', data);
     const hashArray = Array.from(new Uint8Array(hashBuffer));
@@ -32,24 +49,14 @@ async function sha256(data: Uint8Array): Promise<string> {
     return `sha256:${hexHash}`;
 }
 
-// --- Initialization Function (now only sets up cron jobs, no local file reading) ---
-async function initializeApp() {
-  console.log("Initializing application...");
-  setupCronJobs();
-  console.log("Application initialization complete.");
-}
-
-// Call initialization functions
-await initializeApp();
-
+// --- Environment Variable Warnings ---
 if (!ADMIN_USERNAME || !ADMIN_PASSWORD) {
-  console.warn("WARNING: WEBHOOK_ADMIN_USERNAME or WEBHOOK_ADMIN_PASSWORD environment variables are not set. The UI will not be password protected!");
+  console.warn("WARNING: WEBHOOK_ADMIN_USERNAME or WEBHOOK_PASSWORD environment variables are not set. The UI will not be password protected!");
 }
 
 if (!DD_PROJECT_ID || !DD_ACCESS_TOKEN) {
     console.warn("WARNING: DD_PROJECT_ID or DD_ACCESS_TOKEN environment variables are not set. Automated redeployments will not work!");
 }
-
 
 // --- Generic Webhook Pinger Function ---
 async function pingWebhook(webhookUrl: string, name: string) {
@@ -72,24 +79,6 @@ async function pingWebhook(webhookUrl: string, name: string) {
     console.error(`Error pinging "${name}" webhook:`, error);
   }
 }
-
-// --- Deno.cron Job Registration ---
-async function setupCronJobs() {
-  console.log("Setting up Deno cron jobs from KV...");
-  const iter = kv.list<Webhook>({ prefix: ["webhooks"] });
-  for await (const entry of iter) {
-    const hook = entry.value;
-    const cronName = `generic_webhook_${hook.id}`;
-
-    Deno.cron(cronName, hook.schedule, async () => {
-      console.log(`Triggering scheduled webhook: ${hook.name} (ID: ${hook.id})`);
-      await pingWebhook(hook.url, hook.name);
-    });
-    console.log(`  - Registered cron job: "${hook.name}" (ID: ${hook.id}) with schedule "${hook.schedule}"`);
-  }
-  console.log("Finished setting up Deno cron jobs.");
-}
-
 
 // --- HTTP Basic Authentication Middleware ---
 function basicAuth(req: Request): Response | null {
@@ -131,7 +120,6 @@ async function triggerDenoDeployRedeploy(): Promise<boolean> {
         return false;
     }
 
-    // Fetch index.html content dynamically from the raw GitHub URL
     let indexHtmlContent: string;
     try {
         console.log(`Fetching index.html content from: ${INDEX_HTML_RAW_URL}`);
@@ -157,15 +145,15 @@ async function triggerDenoDeployRedeploy(): Promise<boolean> {
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-                entryPointUrl: ENTRY_POINT_URL, // This is now "main.ts"
+                entryPointUrl: ENTRY_POINT_URL,
                 assets: {
-                    "static/index.html": { // Specify path in deployment
+                    "static/index.html": {
                         kind: "file",
                         content: indexHtmlContent,
                         encoding: "utf-8",
                     },
                 },
-                envVars: {},
+                envVars: {}, // Environment variables are not usually included in the deploy payload directly
             }),
         });
 
@@ -183,8 +171,7 @@ async function triggerDenoDeployRedeploy(): Promise<boolean> {
     }
 }
 
-
-// --- Function to update a webhook (NEW) ---
+// --- Function to update a webhook ---
 async function updateWebhook(id: string, updatedData: Partial<Webhook>): Promise<Webhook | null> {
     const key = ["webhooks", id];
     const entry = await kv.get<Webhook>(key);
@@ -194,18 +181,16 @@ async function updateWebhook(id: string, updatedData: Partial<Webhook>): Promise
     }
 
     const currentHook = entry.value;
-    // Apply updates, but ensure ID and createdAt are not changed
     const newHook: Webhook = {
         ...currentHook,
         ...updatedData,
-        id: currentHook.id, // Explicitly keep original ID
-        createdAt: currentHook.createdAt, // Explicitly keep original creation date
+        id: currentHook.id,
+        createdAt: currentHook.createdAt,
     };
 
     await kv.set(key, newHook);
     return newHook;
 }
-
 
 // --- HTTP Server for UI and KV Management ---
 async function handler(req: Request): Promise<Response> {
@@ -274,23 +259,23 @@ async function handler(req: Request): Promise<Response> {
     }
   }
 
-  // API to update a webhook (NEW)
+  // API to update a webhook
   if (url.pathname.startsWith("/hooks/") && req.method === "PUT") {
-    const id = url.pathname.split("/").pop(); // Get the ID from the URL
+    const id = url.pathname.split("/").pop();
     if (!id) {
       return new Response("Webhook ID missing", { status: 400 });
     }
 
     try {
-      const data = await req.json(); // Get updated fields from request body
-      const updatedHook = await updateWebhook(id, data); // Use the new updateWebhook function
+      const data = await req.json();
+      const updatedHook = await updateWebhook(id, data);
 
       if (!updatedHook) {
         return new Response("Webhook not found", { status: 404 });
       }
 
       return new Response(JSON.stringify(updatedHook), {
-        status: 200, // 200 OK for successful update
+        status: 200,
         headers: { "Content-Type": "application/json" },
       });
     } catch (error) {
@@ -299,10 +284,9 @@ async function handler(req: Request): Promise<Response> {
     }
   }
 
-
   // API to delete a webhook
   if (url.pathname.startsWith("/hooks/") && req.method === "DELETE") {
-    const id = url.pathname.split("/").pop(); // Get the ID from the URL
+    const id = url.pathname.split("/").pop();
     if (!id) {
       return new Response("Webhook ID missing", { status: 400 });
     }
