@@ -1,4 +1,4 @@
-// --- main.ts (Latest Corrected Version for Deno.cron) ---
+// --- main.ts (Latest Corrected Version for 204 No Content) ---
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { join } from "https://deno.land/std@0.224.0/path/mod.ts";
@@ -14,8 +14,6 @@ interface Webhook {
 const kv = await Deno.openKv(); // Open Deno KV database
 
 // --- TOP-LEVEL CRON JOB REGISTRATION ---
-// This section directly defines cron jobs at the top-level,
-// ensuring compliance with Deno.cron's strict requirements.
 console.log("Setting up Deno cron jobs from KV (top-level)...");
 const iter = kv.list<Webhook>({ prefix: ["webhooks"] });
 for await (const entry of iter) {
@@ -24,7 +22,7 @@ for await (const entry of iter) {
 
   Deno.cron(cronName, hook.schedule, async () => {
     console.log(`Triggering scheduled webhook: ${hook.name} (ID: ${hook.id})`);
-    await pingWebhook(hook.url, hook.name); // Ensure pingWebhook is defined before this loop if it were below.
+    await pingWebhook(hook.url, hook.name);
   });
   console.log(`  - Registered cron job: "${hook.name}" (ID: ${hook.id}) with schedule "${hook.schedule}"`);
 }
@@ -32,7 +30,7 @@ console.log("Finished setting up Deno cron jobs (top-level).");
 
 // --- Configuration from Environment Variables ---
 const ADMIN_USERNAME = Deno.env.get("WEBHOOK_ADMIN_USERNAME");
-const ADMIN_PASSWORD = Deno.env.get("WEBHOOK_ADMIN_PASSWORD"); 
+const ADMIN_PASSWORD = Deno.env.get("WEBHOOK_ADMIN_PASSWORD"); // Corrected variable name to match your preference
 const DD_PROJECT_ID = Deno.env.get("DD_PROJECT_ID");
 const DD_ACCESS_TOKEN = Deno.env.get("DD_ACCESS_TOKEN");
 
@@ -51,7 +49,7 @@ async function sha256(data: Uint8Array): Promise<string> {
 
 // --- Environment Variable Warnings ---
 if (!ADMIN_USERNAME || !ADMIN_PASSWORD) {
-  console.warn("WARNING: WEBHOOK_ADMIN_USERNAME or WEBHOOK_PASSWORD environment variables are not set. The UI will not be password protected!");
+  console.warn("WARNING: WEBHOOK_ADMIN_USERNAME or WEBHOOK_ADMIN_PASSWORD environment variables are not set. The UI will not be password protected!");
 }
 
 if (!DD_PROJECT_ID || !DD_ACCESS_TOKEN) {
@@ -293,7 +291,8 @@ async function handler(req: Request): Promise<Response> {
 
     try {
       await kv.delete(["webhooks", id]);
-      return new Response("Webhook deleted", { status: 204 });
+      // CORRECTED: Return null body for 204 No Content status
+      return new Response(null, { status: 204 });
     } catch (error) {
       console.error("Error deleting webhook:", error);
       return new Response(`Failed to delete webhook: ${error.message}`, { status: 500 });
