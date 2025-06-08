@@ -25,25 +25,43 @@
         .success-message { color: green; margin-top: 0.5rem; }
         .hook-item {
             background-color: #f9f9f9;
-            border: 1px solid #e2e8f0;
+            border: 1px solid #e2e8f0; /* Changed from #eee for consistency */
             padding: 1rem;
             margin-bottom: 0.75rem;
-            border-radius: 8px;
+            border-radius: 8px; /* Changed from 4px for consistency */
             display: flex;
             justify-content: space-between;
             align-items: center;
         }
         .hook-details { flex-grow: 1; }
-        .hook-details h3 { font-weight: bold; margin-bottom: 0.25rem; }
-        .hook-details p { font-size: 0.9rem; color: #555; }
-        .hook-actions { display: flex; gap: 0.5rem; }
+        .hook-details h3 { font-weight: bold; margin-bottom: 0.25rem; } /* Added for clarity */
+        .hook-details p { font-size: 0.9rem; color: #555; } /* Added for consistency */
+        .hook-actions { display: flex; gap: 0.5rem; } /* Changed to flexbox for spacing */
         .delete-button { background-color: #ef4444; } /* Red */
         .delete-button:hover { background-color: #dc2626; }
         .edit-button { background-color: #3b82f6; } /* Blue */
         .edit-button:hover { background-color: #2563eb; }
         .cancel-edit-button { background-color: #6b7280; } /* Gray */
         .cancel-edit-button:hover { background-color: #4b5563; }
-        #message-container { margin-top: 1rem; }
+        #message-container { margin-top: 1rem; } /* Changed from #messages */
+        #redeploy-button { /* Consolidated styles from previous version */
+            background-color: #007bff; /* Blue color */
+            margin-top: 1rem;
+            width: 100%;
+        }
+        #redeploy-button:hover {
+            background-color: #0056b3;
+        }
+        /* Adjusted the .important-note as it's no longer present in the new structure for edit functionality */
+        /* You might want to remove or repurpose this style if it's not used */
+        .important-note {
+            background-color: #fff3cd;
+            border-left: 5px solid #ffc107;
+            padding: 1rem;
+            margin-top: 1.5rem;
+            color: #664d03;
+            border-radius: 4px;
+        }
     </style>
 </head>
 <body class="bg-gray-100">
@@ -66,7 +84,10 @@
                 <div class="form-group">
                     <label for="schedule">Cron Schedule:</label>
                     <input type="text" id="schedule" name="schedule" required placeholder="e.g., 0 0 * * * (daily at midnight)">
-                    <p class="text-sm text-gray-500 mt-1">Example: `0 0 * * *` (daily at midnight), `*/5 * * * *` (every 5 minutes).</p>
+                    <p class="text-sm text-gray-500 mt-1">
+                        Example: <code>0 0 * * *</code> (daily at midnight), <code>*/5 * * * *</code> (every 5 minutes).
+                        <a href="https://crontab.guru/" target="_blank" class="text-blue-500 hover:underline">Need help with cron syntax?</a>
+                    </p>
                 </div>
                 <button type="submit" id="submit-button" class="mt-4 mr-2">Add Webhook</button>
                 <button type="button" id="cancel-edit-button" class="mt-4 cancel-edit-button hidden">Cancel Edit</button>
@@ -87,212 +108,4 @@
         const webhookForm = document.getElementById('webhook-form');
         const webhookIdInput = document.getElementById('webhook-id');
         const nameInput = document.getElementById('name');
-        const urlInput = document.getElementById('url');
-        const scheduleInput = document.getElementById('schedule');
-        const submitButton = document.getElementById('submit-button');
-        const formTitle = document.getElementById('form-title');
-        const cancelEditButton = document.getElementById('cancel-edit-button');
-        const redeployButton = document.getElementById('redeploy-button');
-
-        let currentHooks = []; // Store fetched hooks for easy access during edit
-
-        function showMessage(message, type) {
-            messageContainer.textContent = message;
-            messageContainer.className = `p-3 rounded-md mb-4 ${type === 'success' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`;
-            messageContainer.style.display = 'block'; // Ensure it's visible
-            setTimeout(() => {
-                messageContainer.style.display = 'none';
-            }, 5000); // Hide after 5 seconds
-        }
-
-        async function fetchHooks() {
-            try {
-                hooksList.innerHTML = '<p class="text-gray-600" id="loading-message">Loading webhooks...</p>';
-                const response = await fetch('/hooks');
-                if (!response.ok) {
-                    const errorText = await response.text();
-                    throw new Error(`HTTP error! status: ${response.status} - ${errorText}`);
-                }
-                currentHooks = await response.json(); // Store fetched hooks
-                renderHooks(currentHooks);
-            } catch (error) {
-                console.error('Error fetching webhooks:', error);
-                showMessage(`Failed to load webhooks: ${error.message}`, 'error');
-                hooksList.innerHTML = '<p class="text-red-600">Failed to load webhooks.</p>';
-            }
-        }
-
-        function renderHooks(hooks) {
-            hooksList.innerHTML = ''; // Clear existing list
-            if (hooks.length === 0) {
-                hooksList.innerHTML = '<p class="text-gray-600">No webhooks scheduled yet.</p>';
-                return;
-            }
-
-            hooks.forEach(hook => {
-                const hookItem = document.createElement('div');
-                hookItem.className = 'hook-item';
-                hookItem.innerHTML = `
-                    <div class="hook-details">
-                        <h3 class="text-lg">${hook.name}</h3>
-                        <p>URL: <span class="break-all">${hook.url}</span></p>
-                        <p>Schedule: <code>${hook.schedule}</code></p>
-                        <p class="text-xs text-gray-400">ID: ${hook.id}</p>
-                    </div>
-                    <div class="hook-actions">
-                        <button class="edit-button" data-id="${hook.id}">Edit</button>
-                        <button class="delete-button" data-id="${hook.id}">Delete</button>
-                    </div>
-                `;
-                hooksList.appendChild(hookItem);
-            });
-
-            // Attach event listeners to new buttons
-            document.querySelectorAll('.delete-button').forEach(button => {
-                button.addEventListener('click', async (event) => {
-                    const id = event.target.dataset.id;
-                    if (confirm('Are you sure you want to delete this webhook?')) {
-                        await deleteHook(id);
-                    }
-                });
-            });
-
-            document.querySelectorAll('.edit-button').forEach(button => {
-                button.addEventListener('click', (event) => {
-                    const id = event.target.dataset.id;
-                    editHook(id);
-                });
-            });
-        }
-
-        async function addOrUpdateHook(event) {
-            event.preventDefault(); // Prevent default form submission
-
-            const id = webhookIdInput.value;
-            const name = nameInput.value;
-            const url = urlInput.value;
-            const schedule = scheduleInput.value;
-
-            const hookData = { name, url, schedule };
-
-            try {
-                let response;
-                if (id) {
-                    // Update existing webhook
-                    response = await fetch(`/hooks/${id}`, {
-                        method: 'PUT',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(hookData),
-                    });
-                } else {
-                    // Add new webhook
-                    response = await fetch('/hooks', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(hookData),
-                    });
-                }
-
-                if (response.ok) {
-                    showMessage(`Webhook ${id ? 'updated' : 'added'} successfully!`, 'success');
-                    webhookForm.reset();
-                    resetFormState(); // Reset form to 'Add' mode
-                    await fetchHooks(); // Refresh list
-                    // Trigger redeploy after add/update
-                    showMessage('Triggering project redeploy to activate changes...', 'success');
-                    await triggerRedeploy();
-                } else {
-                    const errorText = await response.text();
-                    throw new Error(`HTTP error! status: ${response.status} - ${errorText}`);
-                }
-            } catch (error) {
-                console.error(`Error ${id ? 'updating' : 'adding'} webhook:`, error);
-                showMessage(`Failed to ${id ? 'update' : 'add'} webhook: ${error.message}`, 'error');
-            }
-        }
-
-        async function deleteHook(id) {
-            try {
-                const response = await fetch(`/hooks/${id}`, {
-                    method: 'DELETE',
-                });
-                if (response.ok) {
-                    showMessage('Webhook deleted successfully!', 'success');
-                    await fetchHooks(); // Refresh list
-                    // Trigger redeploy after delete
-                    showMessage('Triggering project redeploy to activate changes...', 'success');
-                    await triggerRedeploy();
-                } else {
-                    const errorText = await response.text();
-                    throw new Error(`HTTP error! status: ${response.status} - ${errorText}`);
-                }
-            } catch (error) {
-                console.error('Error deleting webhook:', error);
-                showMessage(`Failed to delete webhook: ${error.message}`, 'error');
-            }
-        }
-
-        function editHook(id) {
-            const hookToEdit = currentHooks.find(hook => hook.id === id);
-            if (hookToEdit) {
-                webhookIdInput.value = hookToEdit.id;
-                nameInput.value = hookToEdit.name;
-                urlInput.value = hookToEdit.url;
-                scheduleInput.value = hookToEdit.schedule;
-
-                formTitle.textContent = 'Edit Webhook';
-                submitButton.textContent = 'Update Webhook';
-                cancelEditButton.classList.remove('hidden');
-
-                // Scroll to the form
-                webhookForm.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            } else {
-                showMessage('Webhook not found for editing.', 'error');
-            }
-        }
-
-        function resetFormState() {
-            webhookIdInput.value = '';
-            formTitle.textContent = 'Add New Webhook';
-            submitButton.textContent = 'Add Webhook';
-            cancelEditButton.classList.add('hidden');
-            webhookForm.reset(); // Clear input fields
-        }
-
-        async function triggerRedeploy() {
-            redeployButton.disabled = true; // Disable button to prevent multiple clicks
-            redeployButton.textContent = 'Triggering Redeploy...';
-            try {
-                const response = await fetch('/redeploy', {
-                    method: 'POST',
-                });
-
-                if (response.ok) {
-                    showMessage('Redeploy triggered successfully! New cron jobs will be active shortly.', 'success');
-                } else {
-                    const errorText = await response.text();
-                    throw new Error(`HTTP error! status: ${response.status} - ${errorText}`);
-                }
-            } catch (error) {
-                console.error('Error triggering redeploy:', error);
-                showMessage(`Failed to trigger redeploy: ${error.message}`, 'error');
-            } finally {
-                redeployButton.disabled = false;
-                redeployButton.textContent = 'Trigger Project Redeploy';
-            }
-        }
-
-        // Event Listeners
-        webhookForm.addEventListener('submit', addOrUpdateHook);
-        cancelEditButton.addEventListener('click', resetFormState);
-        redeployButton.addEventListener('click', async () => {
-            if (confirm('Are you sure you want to trigger a redeployment? This will restart the application and apply any pending cron job changes.')) {
-                await triggerRedeploy();
-            }
-        });
-
-        // Initial fetch when the page loads
-        document.addEventListener('DOMContentLoaded', fetchHooks);
-    </script>
-</body>
-</html>
+        const urlInput = document
