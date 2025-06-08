@@ -19,7 +19,7 @@ const DD_ACCESS_TOKEN = Deno.env.get("DD_ACCESS_TOKEN");
 
 // --- Global variables for asset metadata (no longer populated at startup for index.html) ---
 // We will fetch index.html content dynamically when needed
-const ENTRY_POINT_URL = `https://raw.githubusercontent.com/eSolia/hook-runner/refs/heads/main/main.ts`;
+const ENTRY_POINT_URL = `main.ts`; // <--- CHANGED THIS LINE
 const REPO_RAW_BASE_URL = `https://raw.githubusercontent.com/eSolia/hook-runner/refs/heads/main/`;
 const INDEX_HTML_RAW_URL = `${REPO_RAW_BASE_URL}static/index.html`;
 
@@ -164,7 +164,7 @@ async function triggerDenoDeployRedeploy(): Promise<boolean> {
                         encoding: "utf-8",
                     },
                 },
-                envVars: {}, // <--- NEW: Add empty envVars object
+                envVars: {},
             }),
         });
 
