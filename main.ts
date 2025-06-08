@@ -117,8 +117,10 @@ async function triggerDenoDeployRedeploy(): Promise<boolean> {
     const deployUrl = `https://api.deno.com/v1/projects/${DD_PROJECT_ID}/deployments`;
     console.log(`Attempting to trigger redeploy for project ID: ${DD_PROJECT_ID}`);
 
-    // Use the raw url for main.ts.
-    const entryPoint = `https://raw.githubusercontent.com/eSolia/hook-runner/refs/heads/main/main.ts`; // <--- UPDATE THIS LINE
+    const entryPoint = `https://raw.githubusercontent.com/eSolia/hook-runner/refs/heads/main/main.ts`;
+
+    // Define the base URL for raw content from your repository
+    const repoRawBaseUrl = `https://raw.githubusercontent.com/eSolia/hook-runner/refs/heads/main/`;
 
     try {
         const response = await fetch(deployUrl, {
@@ -127,11 +129,25 @@ async function triggerDenoDeployRedeploy(): Promise<boolean> {
                 'Authorization': `Bearer ${DD_ACCESS_TOKEN}`,
                 'Content-Type': 'application/json',
             },
-            // FIX: Add entryPointUrl to the body
             body: JSON.stringify({
                 entryPointUrl: entryPoint,
-                // You can also specify a branch if needed, e.g.:
-                // branch: 'main'
+                // NEW: Define assets
+                assets: {
+                    // Map the local path in your deployment ('static/index.html')
+                    // to its raw URL in the GitHub repository.
+                    "static/index.html": {
+                        path: "static/index.html",
+                        url: `${repoRawBaseUrl}static/index.html`,
+                        // You can also provide the content (instead of URL) if you want,
+                        // or a SHA-256 hash of the content for verification.
+                        // For simplicity, just providing the URL is usually enough.
+                    },
+                    // Add other assets here if you had more files in your 'static' folder
+                    // "static/styles.css": { path: "static/styles.css", url: `${repoRawBaseUrl}static/styles.css` },
+                    // "static/script.js": { path: "static/script.js", url: `${repoRawBaseUrl}static/script.js` },
+                },
+                // You can also specify a branch if needed, though entryPointUrl implies it
+                branch: 'main', // Explicitly specify the branch for clarity
             }),
         });
 
@@ -139,7 +155,7 @@ async function triggerDenoDeployRedeploy(): Promise<boolean> {
             console.log("Deno Deploy redeploy request sent successfully.");
             return true;
         } else {
-            const errorText = await await response.text(); // Await twice for text()
+            const errorText = await response.text();
             console.error(`Failed to trigger Deno Deploy redeploy. Status: ${response.status}, Response: ${errorText}`);
             return false;
         }
