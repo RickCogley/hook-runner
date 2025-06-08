@@ -11,7 +11,7 @@
         .form-group { margin-bottom: 1rem; }
         label { display: block; margin-bottom: 0.5rem; font-weight: bold; }
         input[type="text"] { width: 100%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px; }
-        .button-group { display: flex; gap: 0.5rem; } /* For edit/delete buttons */
+        .button-group { display: flex; gap: 0.5rem; } /* For action buttons */
         button {
             background-color: #4CAF50;
             color: white;
@@ -35,6 +35,12 @@
             align-items: center;
         }
         /* Specific button styles for clarity */
+        .hook-item .run-button {
+            background-color: #28a745; /* Green for Run */
+        }
+        .hook-item .run-button:hover {
+            background-color: #218838;
+        }
         .hook-item .edit-button {
             background-color: #007bff; /* Blue for Edit */
         }
@@ -242,6 +248,7 @@
                             <p class="text-xs text-gray-400">ID: ${hook.id}</p>
                         </div>
                         <div class="button-group">
+                            <button class="run-button bg-green-500 hover:bg-green-700 text-white font-bold py-1 px-3 rounded" data-url="${hook.url}">Run</button>
                             <button class="edit-button bg-blue-500 hover:bg-blue-700 text-white font-bold py-1 px-3 rounded" data-id="${hook.id}">Edit</button>
                             <button class="delete-button bg-red-500 hover:bg-red-700 text-white font-bold py-1 px-3 rounded" data-id="${hook.id}">Delete</button>
                         </div>
@@ -249,7 +256,35 @@
                     webhooksList.appendChild(hookItem);
                 });
 
-                // Add event listeners for edit and delete buttons
+                // Add event listeners for run, edit, and delete buttons
+                document.querySelectorAll('.run-button').forEach(button => {
+                    button.addEventListener('click', async (event) => {
+                        const urlToRun = event.target.dataset.url;
+                        const hookId = event.target.dataset.id; // Not used for direct fetch, but could be useful for logging
+                        if (confirm(`Are you sure you want to run this webhook immediately?\nURL: ${urlToRun}`)) {
+                            try {
+                                const response = await fetch(urlToRun, {
+                                    method: 'POST',
+                                    headers: {
+                                        'Content-Type': 'application/json',
+                                    },
+                                    body: JSON.stringify({ triggeredBy: 'manual_run_button', hookId: hookId || 'unknown' }), // Provide a small payload
+                                });
+
+                                if (response.ok) {
+                                    showMessage(`Webhook triggered successfully! Status: ${response.status}`, 'success');
+                                } else {
+                                    const errorText = await response.text();
+                                    throw new Error(`Failed to trigger: ${response.status} - ${errorText}`);
+                                }
+                            } catch (error) {
+                                console.error('Error triggering webhook:', error);
+                                showMessage(`Failed to trigger webhook: ${error.message}. Check browser console for CORS/network errors.`, 'error');
+                            }
+                        }
+                    });
+                });
+
                 document.querySelectorAll('.edit-button').forEach(button => {
                     button.addEventListener('click', (event) => {
                         const idToEdit = event.target.dataset.id;
