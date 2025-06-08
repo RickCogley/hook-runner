@@ -109,26 +109,23 @@ function basicAuth(req: Request): Response | null {
 
 // --- Function to trigger Deno Deploy redeploy ---
 async function triggerDenoDeployRedeploy(): Promise<boolean> {
-    if (!DD_PROJECT_ID || !DD_ACCESS_TOKEN) { // Updated check
+    if (!DD_PROJECT_ID || !DD_ACCESS_TOKEN) {
         console.error("Cannot trigger redeploy: Project ID or Access Token is missing.");
         return false;
     }
 
-    const deployUrl = `https://api.deno.com/v1/projects/${DD_PROJECT_ID}/deployments`; // Updated URL
+    const deployUrl = `https://api.deno.com/v1/projects/${DD_PROJECT_ID}/deployments`;
     console.log(`Attempting to trigger redeploy for project ID: ${DD_PROJECT_ID}`);
 
     try {
         const response = await fetch(deployUrl, {
             method: 'POST',
             headers: {
-                'Authorization': `Bearer ${DD_ACCESS_TOKEN}`, // Updated token
+                'Authorization': `Bearer ${DD_ACCESS_TOKEN}`,
                 'Content-Type': 'application/json',
             },
-            // The body can be empty or specify a branch, etc.
-            // For a "redeploy current production deployment", it's usually enough
-            // to just POST to the /deployments endpoint for the project.
-            // If you want to redeploy a specific branch, you'd add a 'branch' field:
-            // body: JSON.stringify({ branch: 'main' }),
+            // FIX: Add an empty JSON body
+            body: JSON.stringify({}), // <--- THIS IS THE KEY CHANGE
         });
 
         if (response.ok) {
