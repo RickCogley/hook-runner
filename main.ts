@@ -131,23 +131,22 @@ async function triggerDenoDeployRedeploy(): Promise<boolean> {
             },
             body: JSON.stringify({
                 entryPointUrl: entryPoint,
-                // NEW: Define assets
                 assets: {
-                    // Map the local path in your deployment ('static/index.html')
-                    // to its raw URL in the GitHub repository.
                     "static/index.html": {
                         path: "static/index.html",
                         url: `${repoRawBaseUrl}static/index.html`,
-                        // You can also provide the content (instead of URL) if you want,
-                        // or a SHA-256 hash of the content for verification.
-                        // For simplicity, just providing the URL is usually enough.
+                        // NEW: Add 'kind' field
+                        kind: "file", // <--- THIS IS THE KEY CHANGE
                     },
                     // Add other assets here if you had more files in your 'static' folder
-                    // "static/styles.css": { path: "static/styles.css", url: `${repoRawBaseUrl}static/styles.css` },
-                    // "static/script.js": { path: "static/script.js", url: `${repoRawBaseUrl}static/script.js` },
+                    // For example:
+                    // "static/styles.css": {
+                    //    path: "static/styles.css",
+                    //    url: `${repoRawBaseUrl}static/styles.css`,
+                    //    kind: "file",
+                    // },
                 },
-                // You can also specify a branch if needed, though entryPointUrl implies it
-                branch: 'main', // Explicitly specify the branch for clarity
+                branch: 'main',
             }),
         });
 
