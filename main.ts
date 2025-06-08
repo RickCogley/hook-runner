@@ -160,11 +160,11 @@ async function triggerDenoDeployRedeploy(): Promise<boolean> {
                 assets: {
                     "static/index.html": {
                         kind: "file",
-                        content: indexHtmlContent, // Send the fetched content
+                        content: indexHtmlContent,
                         encoding: "utf-8",
                     },
                 },
-                branch: 'main',
+                // REMOVED: branch: 'main', // This field is not expected by the Deno Deploy API
             }),
         });
 
