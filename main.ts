@@ -117,6 +117,9 @@ async function triggerDenoDeployRedeploy(): Promise<boolean> {
     const deployUrl = `https://api.deno.com/v1/projects/${DD_PROJECT_ID}/deployments`;
     console.log(`Attempting to trigger redeploy for project ID: ${DD_PROJECT_ID}`);
 
+    // Use the raw url for main.ts.
+    const entryPoint = `https://raw.githubusercontent.com/eSolia/hook-runner/refs/heads/main/main.ts`; // <--- UPDATE THIS LINE
+
     try {
         const response = await fetch(deployUrl, {
             method: 'POST',
@@ -124,15 +127,19 @@ async function triggerDenoDeployRedeploy(): Promise<boolean> {
                 'Authorization': `Bearer ${DD_ACCESS_TOKEN}`,
                 'Content-Type': 'application/json',
             },
-            // FIX: Add an empty JSON body
-            body: JSON.stringify({}), // <--- THIS IS THE KEY CHANGE
+            // FIX: Add entryPointUrl to the body
+            body: JSON.stringify({
+                entryPointUrl: entryPoint,
+                // You can also specify a branch if needed, e.g.:
+                // branch: 'main'
+            }),
         });
 
         if (response.ok) {
             console.log("Deno Deploy redeploy request sent successfully.");
             return true;
         } else {
-            const errorText = await response.text();
+            const errorText = await await response.text(); // Await twice for text()
             console.error(`Failed to trigger Deno Deploy redeploy. Status: ${response.status}, Response: ${errorText}`);
             return false;
         }
