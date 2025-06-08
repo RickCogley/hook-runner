@@ -1,8 +1,8 @@
-// --- main.ts (Latest Corrected Version for croner module API and minuteAgo definition) ---
+// --- main.ts (Updated for Deno Deploy Log Integration) ---
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { join } from "https://deno.land/std@0.224.0/path/mod.ts";
-import { Cron } from "https://deno.land/x/croner@8.1.2/dist/croner.js"; // Updated import for croner module
+import { Cron } from "https://deno.land/x/croner@8.1.2/dist/croner.js";
 
 interface Webhook {
   id: string; // UUID for unique identification
@@ -12,17 +12,31 @@ interface Webhook {
   createdAt: string;
 }
 
+// Deno Deploy API type definitions (simplified for relevant fields)
+interface DenoDeployDeployment {
+  id: string;
+  createdAt: string; // ISO 8601 string
+  // ... other fields like projectId, url, etc.
+}
+
+interface DenoDeployLogEntry {
+    message: string;
+    level: string; // e.g., "info", "error", "warning"
+    region: string;
+    timestamp: string; // ISO 8601 string
+    // ... potentially other fields
+}
+
+
 const kv = await Deno.openKv(); // Open Deno KV database
 
 // --- SINGLE TOP-LEVEL CRON JOB FOR DYNAMIC SCHEDULING ---
-// This single cron job will run periodically (every minute) and check all webhooks from KV
-// to determine if they should be triggered based on their schedule.
 console.log("Registering a single top-level Deno cron job to manage dynamic webhooks...");
 Deno.cron("webhook-kv-scheduler", "* * * * *", async () => { // Runs every minute in UTC
   console.log(`[webhook-kv-scheduler] Running at ${new Date().toISOString()}`);
   const now = new Date(); // Current time for schedule comparison (in UTC)
   const oneMinute = 60 * 1000; // One minute in milliseconds
-  const minuteAgo = new Date(now.getTime() - oneMinute); // CORRECTED: Defined minuteAgo here
+  const minuteAgo = new Date(now.getTime() - oneMinute);
 
   const iter = kv.list<Webhook>({ prefix: ["webhooks"] });
   for await (const entry of iter) {
@@ -30,20 +44,15 @@ Deno.cron("webhook-kv-scheduler", "* * * * *", async () => { // Runs every minut
     try {
       const cron = new Cron(hook.schedule);
 
-      // Using cron.nextRun() to get the next scheduled date
       const nextFromMinuteAgo = cron.nextRun(minuteAgo);
 
-      // Check if the next scheduled time falls within the current minute (within a 5-second tolerance)
-      // This helps trigger the webhook if it's due in the current minute.
       if (nextFromMinuteAgo && Math.abs(now.getTime() - nextFromMinuteAgo.getTime()) < 5 * 1000) {
-        // Prevent double-triggering within the same minute
         const lastTriggeredKey = ["last_triggered", hook.id];
         const lastTriggeredEntry = await kv.get<string>(lastTriggeredKey);
 
         let hasTriggeredThisMinute = false;
         if (lastTriggeredEntry.value) {
             const lastTriggeredDate = new Date(lastTriggeredEntry.value);
-            // Compare year, month, day, hour, and minute to ensure it's not already triggered in *this* minute
             if (lastTriggeredDate.getUTCFullYear() === now.getUTCFullYear() &&
                 lastTriggeredDate.getUTCMonth() === now.getUTCMonth() &&
                 lastTriggeredDate.getUTCDate() === now.getUTCDate() &&
@@ -71,7 +80,7 @@ Deno.cron("webhook-kv-scheduler", "* * * * *", async () => { // Runs every minut
 
 // --- Configuration from Environment Variables ---
 const ADMIN_USERNAME = Deno.env.get("WEBHOOK_ADMIN_USERNAME");
-const ADMIN_PASSWORD = Deno.env.get("WEBHOOK_ADMIN_PASSWORD"); // Corrected variable name to match your preference
+const ADMIN_PASSWORD = Deno.env.get("WEBHOOK_ADMIN_PASSWORD");
 const DD_PROJECT_ID = Deno.env.get("DD_PROJECT_ID");
 const DD_ACCESS_TOKEN = Deno.env.get("DD_ACCESS_TOKEN");
 
@@ -94,7 +103,7 @@ if (!ADMIN_USERNAME || !ADMIN_PASSWORD) {
 }
 
 if (!DD_PROJECT_ID || !DD_ACCESS_TOKEN) {
-    console.warn("WARNING: DD_PROJECT_ID or DD_ACCESS_TOKEN environment variables are not set. Automated redeployments will not work!");
+    console.warn("WARNING: DD_PROJECT_ID or DD_ACCESS_TOKEN environment variables are not set. Automated redeployments and log fetching will not work!");
 }
 
 
@@ -193,7 +202,7 @@ async function triggerDenoDeployRedeploy(): Promise<boolean> {
                         encoding: "utf-8",
                     },
                 },
-                envVars: {}, // Environment variables are not usually included in the deploy payload directly
+                envVars: {},
             }),
         });
 
@@ -210,6 +219,79 @@ async function triggerDenoDeployRedeploy(): Promise<boolean> {
         return false;
     }
 }
+
+// --- Function to fetch Deno Deploy Logs ---
+async function fetchDenoDeployLogs(): Promise<DenoDeployLogEntry[]> {
+    if (!DD_PROJECT_ID || !DD_ACCESS_TOKEN) {
+        throw new Error("Deno Deploy Project ID or Access Token is missing. Cannot fetch logs.");
+    }
+
+    // 1. Get current deployment ID
+    const deploymentsUrl = `https://api.deno.com/v1/projects/${DD_PROJECT_ID}/deployments`;
+    let deploymentId: string | null = null;
+    try {
+        const deploymentsResponse = await fetch(deploymentsUrl, {
+            headers: {
+                'Authorization': `Bearer ${DD_ACCESS_TOKEN}`,
+            },
+        });
+        if (!deploymentsResponse.ok) {
+            throw new Error(`Failed to fetch deployments: ${deploymentsResponse.status} - ${await deploymentsResponse.text()}`);
+        }
+        const deployments: DenoDeployDeployment[] = await deploymentsResponse.json();
+
+        // Sort by creation date to get the latest deployment
+        const latestDeployment = deployments.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0];
+
+        if (latestDeployment) {
+            deploymentId = latestDeployment.id;
+            console.log(`Fetching logs for latest deployment ID: ${deploymentId}`);
+        } else {
+            console.warn("No deployments found for this project.");
+            return [];
+        }
+    } catch (error) {
+        console.error("Error fetching deployments for log retrieval:", error);
+        throw error;
+    }
+
+    // 2. Fetch logs for the latest deployment
+    const logsUrl = `https://api.deno.com/v1/projects/${DD_PROJECT_ID}/deployments/${deploymentId}/logs`;
+    try {
+        const logsResponse = await fetch(logsUrl, {
+            headers: {
+                'Authorization': `Bearer ${DD_ACCESS_TOKEN}`,
+            },
+        });
+
+        if (!logsResponse.ok) {
+            throw new Error(`Failed to fetch logs: ${logsResponse.status} - ${await logsResponse.text()}`);
+        }
+
+        // The Deno Deploy logs endpoint returns a stream of JSON objects, one per line.
+        // We'll read the response as text and parse each line.
+        const logText = await logsResponse.text();
+        const rawLogLines = logText.split('\n').filter(line => line.trim() !== '');
+
+        const parsedLogs: DenoDeployLogEntry[] = [];
+        for (const line of rawLogLines) {
+            try {
+                const logEntry = JSON.parse(line);
+                parsedLogs.push(logEntry);
+            } catch (jsonParseError) {
+                console.warn(`Could not parse log line as JSON: ${line}`, jsonParseError);
+                // Fallback: if it's not JSON, treat it as a plain message
+                parsedLogs.push({ message: line, level: "info", region: "unknown", timestamp: new Date().toISOString() });
+            }
+        }
+        return parsedLogs;
+
+    } catch (error) {
+        console.error("Error fetching logs from Deno Deploy API:", error);
+        throw error;
+    }
+}
+
 
 // --- Function to update a webhook ---
 async function updateWebhook(id: string, updatedData: Partial<Webhook>): Promise<Webhook | null> {
@@ -333,7 +415,6 @@ async function handler(req: Request): Promise<Response> {
 
     try {
       await kv.delete(["webhooks", id]);
-      // CORRECTED: Return null body for 204 No Content status
       return new Response(null, { status: 204 });
     } catch (error) {
       console.error("Error deleting webhook:", error);
@@ -349,6 +430,20 @@ async function handler(req: Request): Promise<Response> {
         return new Response("Redeploy triggered successfully.", { status: 200 });
     } else {
         return new Response("Failed to trigger redeploy.", { status: 500 });
+    }
+  }
+
+  // NEW: API endpoint to fetch logs
+  if (url.pathname === "/logs" && req.method === "GET") {
+    try {
+        const logs = await fetchDenoDeployLogs();
+        return new Response(JSON.stringify(logs), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+        });
+    } catch (error) {
+        console.error("Error fetching logs for UI:", error);
+        return new Response(`Failed to fetch logs: ${error.message}`, { status: 500 });
     }
   }
 

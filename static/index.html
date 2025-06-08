@@ -31,23 +31,23 @@
             border-radius: 8px;
             display: flex;
             justify-content: space-between;
-            align-items: flex-start; /* Align items to the start of the cross axis */
-            flex-wrap: wrap; /* Allow items to wrap on smaller screens */
+            align-items: flex-start;
+            flex-wrap: wrap;
         }
         .hook-details {
             flex-grow: 1;
-            margin-right: 1rem; /* Space between details and buttons */
-            min-width: 0; /* Allow text to shrink */
+            margin-right: 1rem;
+            min-width: 0;
         }
         .hook-details p {
             margin-bottom: 0.25rem;
-            word-wrap: break-word; /* Break long words */
+            word-wrap: break-word;
         }
         .hook-actions {
             display: flex;
             gap: 0.5rem;
-            flex-shrink: 0; /* Prevent buttons from shrinking */
-            margin-top: 0.5rem; /* Space from details if wrapped */
+            flex-shrink: 0;
+            margin-top: 0.5rem;
         }
         .hook-actions button {
             padding: 0.5rem 1rem;
@@ -95,6 +95,17 @@
             text-decoration: none;
             cursor: pointer;
         }
+        #logDisplay {
+            width: 100%;
+            min-height: 300px;
+            background-color: #333;
+            color: #eee;
+            font-family: monospace;
+            padding: 1rem;
+            border-radius: 8px;
+            overflow-y: scroll;
+            white-space: pre; /* Preserve whitespace and line breaks */
+        }
     </style>
 </head>
 <body class="bg-gray-100">
@@ -140,6 +151,21 @@
                 Use this if you update the backend code or need to ensure new cron changes take effect.
             </p>
         </div>
+
+        <div class="mt-12 p-4 border border-gray-200 rounded-lg bg-gray-50">
+            <h2 class="text-2xl font-semibold mb-4 flex items-center">
+                <input type="checkbox" id="showLogsCheckbox" class="mr-2 h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded">
+                <label for="showLogsCheckbox" class="cursor-pointer">Show Deno Deploy Logs</label>
+            </h2>
+            <div id="logSection" style="display: none;">
+                <button id="refreshLogsButton" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-1 px-3 rounded mb-4">Refresh Logs</button>
+                <textarea id="logDisplay" readonly class="block"></textarea>
+                <p class="text-sm text-gray-500 mt-2">
+                    Logs displayed are from the latest deployment of this project. Free plans typically retain logs for 24 hours.
+                </p>
+            </div>
+        </div>
+
     </div>
 
     <div id="editHookModal" class="modal">
@@ -172,10 +198,16 @@
         const closeButton = document.querySelector('.close-button');
         const redeployButton = document.getElementById('redeployButton');
 
+        // Log specific elements
+        const showLogsCheckbox = document.getElementById('showLogsCheckbox');
+        const logSection = document.getElementById('logSection');
+        const refreshLogsButton = document.getElementById('refreshLogsButton');
+        const logDisplay = document.getElementById('logDisplay');
+
         function showMessage(message, type = 'info') {
             messageArea.innerHTML = `<div class="p-3 mb-4 rounded-md ${type === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}">${message}</div>`;
             setTimeout(() => {
-                messageArea.innerHTML = ''; // Clear message after some time
+                messageArea.innerHTML = '';
             }, 5000);
         }
 
@@ -227,7 +259,7 @@
                         document.getElementById('editHookName').value = hookToEdit.name;
                         document.getElementById('editHookUrl').value = hookToEdit.url;
                         document.getElementById('editHookSchedule').value = hookToEdit.schedule;
-                        editHookModal.style.display = 'flex'; // Use flex to center
+                        editHookModal.style.display = 'flex';
                     }
                 });
             });
@@ -242,7 +274,7 @@
                             });
                             if (response.ok) {
                                 showMessage('Webhook deleted successfully!', 'success');
-                                fetchHooks(); // Refresh the list
+                                fetchHooks();
                             } else {
                                 throw new Error(`HTTP error! status: ${response.status}`);
                             }
@@ -258,9 +290,9 @@
         // Add new hook form submission
         document.getElementById('createHookForm').addEventListener('submit', async (event) => {
             event.preventDefault();
-            const name = document.getElementById('newHookName').value.trim(); // TRIMMED
-            const url = document.getElementById('newHookUrl').value.trim();   // TRIMMED
-            const schedule = document.getElementById('newHookSchedule').value.trim(); // TRIMMED
+            const name = document.getElementById('newHookName').value.trim();
+            const url = document.getElementById('newHookUrl').value.trim();
+            const schedule = document.getElementById('newHookSchedule').value.trim();
 
             try {
                 const response = await fetch('/hooks', {
@@ -272,7 +304,7 @@
                 if (response.ok) {
                     showMessage('Webhook added successfully!', 'success');
                     document.getElementById('createHookForm').reset();
-                    fetchHooks(); // Refresh the list
+                    fetchHooks();
                 } else {
                     const errorText = await response.text();
                     throw new Error(`HTTP error! status: ${response.status} - ${errorText}`);
@@ -286,9 +318,9 @@
         // Save edited hook (modal)
         document.getElementById('saveEditHookButton').addEventListener('click', async () => {
             const id = document.getElementById('editHookId').value;
-            const name = document.getElementById('editHookName').value.trim(); // TRIMMED
-            const url = document.getElementById('editHookUrl').value.trim();   // TRIMMED
-            const schedule = document.getElementById('editHookSchedule').value.trim(); // TRIMMED
+            const name = document.getElementById('editHookName').value.trim();
+            const url = document.getElementById('editHookUrl').value.trim();
+            const schedule = document.getElementById('editHookSchedule').value.trim();
 
             try {
                 const response = await fetch(`/hooks/${id}`, {
@@ -300,7 +332,7 @@
                 if (response.ok) {
                     showMessage('Webhook updated successfully!', 'success');
                     editHookModal.style.display = 'none';
-                    fetchHooks(); // Refresh the list
+                    fetchHooks();
                 } else {
                     const errorText = await response.text();
                     throw new Error(`HTTP error! status: ${response.status} - ${errorText}`);
@@ -325,12 +357,11 @@
         // Redeploy button
         redeployButton.addEventListener('click', async () => {
             if (confirm('Are you sure you want to trigger a redeployment? This will restart the application.')) {
-                redeployButton.disabled = true; // Disable button to prevent multiple clicks
+                redeployButton.disabled = true;
                 redeployButton.textContent = 'Triggering Redeploy...';
                 try {
                     const response = await fetch('/redeploy', {
                         method: 'POST',
-                        // Basic Auth is handled by the browser for this origin
                     });
 
                     if (response.ok) {
@@ -348,6 +379,47 @@
                 }
             }
         });
+
+        // --- Log functionality ---
+        async function fetchAndDisplayLogs() {
+            logDisplay.value = 'Fetching logs...';
+            try {
+                const response = await fetch('/logs');
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const logs = await response.json();
+                let logText = '';
+                if (logs.length === 0) {
+                    logText = 'No recent logs available for this project.';
+                } else {
+                    // Format logs for display
+                    logs.forEach(log => {
+                        const timestamp = new Date(log.timestamp).toLocaleString();
+                        logText += `[${timestamp}] [${log.level.toUpperCase()}] ${log.message}\n`;
+                    });
+                }
+                logDisplay.value = logText;
+                logDisplay.scrollTop = logDisplay.scrollHeight; // Scroll to bottom
+            } catch (error) {
+                console.error('Error fetching and displaying logs:', error);
+                logDisplay.value = `Failed to fetch logs: ${error.message}\n\nPlease ensure DD_PROJECT_ID and DD_ACCESS_TOKEN are correctly set in Deno Deploy environment variables.`;
+                showMessage(`Failed to fetch logs: ${error.message}`, 'error');
+            }
+        }
+
+        showLogsCheckbox.addEventListener('change', () => {
+            if (showLogsCheckbox.checked) {
+                logSection.style.display = 'block';
+                fetchAndDisplayLogs(); // Fetch logs when checked
+            } else {
+                logSection.style.display = 'none';
+                logDisplay.value = ''; // Clear logs when hidden
+            }
+        });
+
+        refreshLogsButton.addEventListener('click', fetchAndDisplayLogs);
+
 
         // Initial fetch when the page loads
         document.addEventListener('DOMContentLoaded', fetchHooks);
