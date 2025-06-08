@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Generic Webhook Scheduler</title>
-    <link href="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
     <style>
         body { font-family: sans-serif; }
         .container { max-width: 800px; margin: 2rem auto; padding: 1rem; }
@@ -123,7 +123,7 @@
         <div class="mt-8 p-4 bg-yellow-50 rounded-lg border border-yellow-200 text-center">
             <h2 class="text-xl font-bold mb-4">Update Application</h2>
             <p class="mb-4 text-sm text-gray-700">Clicking this will redeploy the application on Deno Deploy. Use this after making changes to `main.ts` or `index.html` to ensure they are active.</p>
-            <button id="redeployButton" class="bg-cyan-600 hover:bg-cyan-800 text-white font-bold py-2 px-6 rounded-full">Trigger Project Redeploy</button>
+            <button id="redeployButton" class="bg-yellow-600 hover:bg-yellow-800 text-white font-bold py-2 px-6 rounded-full">Trigger Project Redeploy</button>
         </div>
 
         <div class="mt-8 p-4 bg-gray-100 rounded-lg" style="display: none;">
