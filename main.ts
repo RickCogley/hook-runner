@@ -1,7 +1,8 @@
-// --- main.ts (Latest Corrected Version for 204 No Content) ---
+// --- main.ts (Latest Corrected Version for Deno.cron "top-level only" error) ---
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { join } from "https://deno.land/std@0.224.0/path/mod.ts";
+import { Cron } from "https://deno.land/x/cron_parser@v0.0.1/mod.ts"; // NEW: Import Cron parser
 
 interface Webhook {
   id: string; // UUID for unique identification
@@ -13,20 +14,60 @@ interface Webhook {
 
 const kv = await Deno.openKv(); // Open Deno KV database
 
-// --- TOP-LEVEL CRON JOB REGISTRATION ---
-console.log("Setting up Deno cron jobs from KV (top-level)...");
-const iter = kv.list<Webhook>({ prefix: ["webhooks"] });
-for await (const entry of iter) {
-  const hook = entry.value;
-  const cronName = `generic_webhook_${hook.id}`;
+// --- SINGLE TOP-LEVEL CRON JOB FOR DYNAMIC SCHEDULING ---
+// This single cron job will run periodically (every minute) and check all webhooks from KV
+// to determine if they should be triggered based on their schedule.
+console.log("Registering a single top-level Deno cron job to manage dynamic webhooks...");
+Deno.cron("webhook-kv-scheduler", "* * * * *", async () => { // Runs every minute in UTC
+  console.log(`[webhook-kv-scheduler] Running at ${new Date().toISOString()}`);
+  const now = new Date(); // Current time for schedule comparison (in UTC)
+  const oneMinute = 60 * 1000; // One minute in milliseconds
 
-  Deno.cron(cronName, hook.schedule, async () => {
-    console.log(`Triggering scheduled webhook: ${hook.name} (ID: ${hook.id})`);
-    await pingWebhook(hook.url, hook.name);
-  });
-  console.log(`  - Registered cron job: "${hook.name}" (ID: ${hook.id}) with schedule "${hook.schedule}"`);
-}
-console.log("Finished setting up Deno cron jobs (top-level).");
+  const iter = kv.list<Webhook>({ prefix: ["webhooks"] });
+  for await (const entry of iter) {
+    const hook = entry.value;
+    try {
+      const cron = new Cron(hook.schedule);
+
+      // Get the next scheduled time that is *after* the start of the previous minute
+      const minuteAgo = new Date(now.getTime() - oneMinute);
+      const nextFromMinuteAgo = cron.next(minuteAgo);
+
+      // Check if the next scheduled time falls within the current minute (within a 5-second tolerance)
+      // This helps trigger the webhook if it's due in the current minute.
+      if (nextFromMinuteAgo && Math.abs(now.getTime() - nextFromMinuteAgo.getTime()) < 5 * 1000) {
+        // Prevent double-triggering within the same minute
+        const lastTriggeredKey = ["last_triggered", hook.id];
+        const lastTriggeredEntry = await kv.get<string>(lastTriggeredKey);
+
+        let hasTriggeredThisMinute = false;
+        if (lastTriggeredEntry.value) {
+            const lastTriggeredDate = new Date(lastTriggeredEntry.value);
+            // Compare year, month, day, hour, and minute to ensure it's not already triggered in *this* minute
+            if (lastTriggeredDate.getUTCFullYear() === now.getUTCFullYear() &&
+                lastTriggeredDate.getUTCMonth() === now.getUTCMonth() &&
+                lastTriggeredDate.getUTCDate() === now.getUTCDate() &&
+                lastTriggeredDate.getUTCHours() === now.getUTCHours() &&
+                lastTriggeredDate.getUTCMinutes() === now.getUTCMinutes()) {
+                hasTriggeredThisMinute = true;
+            }
+        }
+
+        if (!hasTriggeredThisMinute) {
+          console.log(`[webhook-kv-scheduler] Triggering scheduled webhook: ${hook.name} (ID: ${hook.id}) due at ${nextFromMinuteAgo.toISOString()}`);
+          await pingWebhook(hook.url, hook.name);
+          await kv.set(lastTriggeredKey, now.toISOString()); // Mark as triggered now (in UTC)
+        } else {
+          console.log(`[webhook-kv-scheduler] Webhook ${hook.name} (ID: ${hook.id}) already triggered this minute.`);
+        }
+      }
+
+    } catch (parseError) {
+      console.error(`[webhook-kv-scheduler] Error parsing cron schedule for ${hook.name} (ID: ${hook.id}): ${parseError.message}`);
+    }
+  }
+  console.log(`[webhook-kv-scheduler] Finished run.`);
+});
 
 // --- Configuration from Environment Variables ---
 const ADMIN_USERNAME = Deno.env.get("WEBHOOK_ADMIN_USERNAME");
@@ -35,7 +76,7 @@ const DD_PROJECT_ID = Deno.env.get("DD_PROJECT_ID");
 const DD_ACCESS_TOKEN = Deno.env.get("DD_ACCESS_TOKEN");
 
 // --- Global variables for asset metadata ---
-const ENTRY_POINT_URL = `main.ts`; // Corrected: Just the file name relative to the project root
+const ENTRY_POINT_URL = `main.ts`;
 const REPO_RAW_BASE_URL = `https://raw.githubusercontent.com/eSolia/hook-runner/refs/heads/main/`;
 const INDEX_HTML_RAW_URL = `${REPO_RAW_BASE_URL}static/index.html`;
 
