@@ -32,7 +32,7 @@ console.log("Finished setting up Deno cron jobs (top-level).");
 
 // --- Configuration from Environment Variables ---
 const ADMIN_USERNAME = Deno.env.get("WEBHOOK_ADMIN_USERNAME");
-const ADMIN_PASSWORD = Deno.env.get("WEBHOOK_PASSWORD"); // Corrected to WEBHOOK_PASSWORD, as per previous naming
+const ADMIN_PASSWORD = Deno.env.get("WEBHOOK_ADMIN_PASSWORD"); 
 const DD_PROJECT_ID = Deno.env.get("DD_PROJECT_ID");
 const DD_ACCESS_TOKEN = Deno.env.get("DD_ACCESS_TOKEN");
 
