@@ -1,4 +1,4 @@
-// --- main.ts (Latest Corrected Version for croner module API and cron.nextRun fix) ---
+// --- main.ts (Latest Corrected Version for croner module API and minuteAgo definition) ---
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { join } from "https://deno.land/std@0.224.0/path/mod.ts";
@@ -22,6 +22,7 @@ Deno.cron("webhook-kv-scheduler", "* * * * *", async () => { // Runs every minut
   console.log(`[webhook-kv-scheduler] Running at ${new Date().toISOString()}`);
   const now = new Date(); // Current time for schedule comparison (in UTC)
   const oneMinute = 60 * 1000; // One minute in milliseconds
+  const minuteAgo = new Date(now.getTime() - oneMinute); // CORRECTED: Defined minuteAgo here
 
   const iter = kv.list<Webhook>({ prefix: ["webhooks"] });
   for await (const entry of iter) {
@@ -29,7 +30,7 @@ Deno.cron("webhook-kv-scheduler", "* * * * *", async () => { // Runs every minut
     try {
       const cron = new Cron(hook.schedule);
 
-      // CORRECTED: Use cron.nextRun() to get the next scheduled date
+      // Using cron.nextRun() to get the next scheduled date
       const nextFromMinuteAgo = cron.nextRun(minuteAgo);
 
       // Check if the next scheduled time falls within the current minute (within a 5-second tolerance)
