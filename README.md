@@ -39,7 +39,7 @@ Set the following environment variables in your Deno Deploy project settings:
 
 * `WEBHOOK_ADMIN_USERNAME`: Your desired username for UI access.
 * `WEBHOOK_ADMIN_PASSWORD`: Your desired password for UI access.
-* `DD_PROJECT_ID`: Your Deno Deploy Project ID. This is typically found in the URL of your Deno Deploy project dashboard (e.g., `https://dash.deno.com/projects/<YOUR_PROJECT_ID>`).
+* `DD_PROJECT_ID`: Your Deno Deploy Project ID in UUID format. This can be found by running `deployctl projects show esolia-hook-runner` (replace "esolia-hook-runner" with your project's alias) and it will return the "Dash URL" showing your project id as a UUID (e.g., `https://dash.deno.com/projects/<YOUR_PROJECT_UUID>`).
 * `DD_ACCESS_TOKEN`: A Deno Deploy Access Token with `Read: projects` and `Deploy: projects` permissions. You can generate one in your Deno Deploy account settings under "Access Tokens".
 
 **Note:** If `WEBHOOK_ADMIN_USERNAME` or `WEBHOOK_ADMIN_PASSWORD` are not set, the UI will not be password protected. If `DD_PROJECT_ID` or `DD_ACCESS_TOKEN` are not set, the "Trigger Project Redeploy" button will not function.
@@ -55,7 +55,7 @@ Set the following environment variables in your Deno Deploy project settings:
 
 1.  **Access the UI:** Once deployed, navigate to your Deno Deploy project's URL. You will be prompted for the `WEBHOOK_ADMIN_USERNAME` and `WEBHOOK_ADMIN_PASSWORD` if set.
 2.  **Add a Webhook:**
-    * Enter a `Name` for your webhook (e.g., "Daily Report Trigger").
+    * Enter a `Name` for your webhook (e.g., "Netlify Site X Build Hook").
     * Provide the `URL` of the endpoint that should receive the POST request.
     * Enter the `Cron Schedule` in UTC (e.g., `0 0 * * *` for daily at midnight). You can use tools like [crontab.guru](https://crontab.guru/) to help formulate your cron expressions.
     * Click "Add Webhook".
