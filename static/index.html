@@ -62,7 +62,7 @@
             <div class="form-group">
                 <label for="webhookSchedule">Cron Schedule (UTC):</label>
                 <input type="text" id="webhookSchedule" placeholder="0 0 * * *" value="0 0 * * *" class="border p-2 w-full">
-                <p class="text-sm text-gray-600 mt-1">e.g., `0 0 * * *` for daily at midnight, `*/5 * * * *` for every 5 minutes.</p>
+                <p class="text-sm text-gray-600 mt-1">e.g., <code>0 0 * * *</code> for daily at midnight, <code>*/5 * * * *</code> for every 5 minutes.</p>
                 <p class="text-sm text-gray-600 mt-1">Refer to <a href="https://crontab.guru/" target="_blank" class="text-blue-500 hover:underline">crontab.guru</a> for help with schedules.</p>
             </div>
             <button id="addWebhookButton" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded w-full">Add Webhook</button>
@@ -77,7 +77,7 @@
 
         <div class="mt-8 p-4 bg-yellow-50 rounded-lg border border-yellow-200 text-center">
             <h2 class="text-xl font-bold mb-4">Update Application</h2>
-            <p class="mb-4 text-sm text-gray-700">Clicking this will redeploy the application on Deno Deploy. Use this after making changes to `main.ts` or `index.html` to ensure they are active.</p>
+            <p class="mb-4 text-sm text-gray-700">Clicking this will redeploy the application on Deno Deploy. Use this after making changes to <code>main.ts</code> or <code>index.html</code> to ensure they are active.</p>
             <button id="redeployButton" class="bg-purple-600 hover:bg-purple-800 text-white font-bold py-2 px-6 rounded-full">Trigger Project Redeploy</button>
         </div>
 
