@@ -72,6 +72,3 @@ Set the following environment variables in your Deno Deploy project settings:
 * **Error Handling:** The application logs errors related to cron parsing and webhook pings to your Deno Deploy logs. Monitor these for any issues.
 * **Security:** Basic Auth provides a simple layer of security. For highly sensitive applications, consider more robust authentication mechanisms.
 
----
-
-Feel free to customize this README further with more specific details, screenshots, or any other information relevant to your project!
