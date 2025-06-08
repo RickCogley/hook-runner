@@ -130,7 +130,7 @@ async function triggerDenoDeployRedeploy(): Promise<boolean> {
         return false;
     }
 
-    // NEW: Fetch index.html content dynamically
+    // Fetch index.html content dynamically
     let indexHtmlContent: string;
     try {
         console.log(`Fetching index.html content from: ${INDEX_HTML_RAW_URL}`);
@@ -164,7 +164,7 @@ async function triggerDenoDeployRedeploy(): Promise<boolean> {
                         encoding: "utf-8",
                     },
                 },
-                // REMOVED: branch: 'main', // This field is not expected by the Deno Deploy API
+                envVars: {}, // <--- NEW: Add empty envVars object
             }),
         });
 
@@ -197,7 +197,7 @@ async function handler(req: Request): Promise<Response> {
   if (url.pathname === "/") {
     const filePath = join(Deno.cwd(), "static", "index.html");
     try {
-      const file = await Deno.readFile(filePath); // This is still okay for serving the UI
+      const file = await Deno.readFile(filePath);
       return new Response(file, {
         headers: { "Content-Type": "text/html" },
       });
