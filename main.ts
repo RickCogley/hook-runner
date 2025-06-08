@@ -19,7 +19,7 @@ const DD_ACCESS_TOKEN = Deno.env.get("DD_ACCESS_TOKEN");
 
 // --- Global variables for asset metadata (will be populated on startup) ---
 let INDEX_HTML_SIZE: number | null = null;
-let INDEX_HTML_SHA256: string | null = null; // NEW: To store the SHA-256 hash
+let INDEX_HTML_SHA256: string | null = null;
 const ENTRY_POINT_URL = `https://raw.githubusercontent.com/eSolia/hook-runner/refs/heads/main/main.ts`;
 const REPO_RAW_BASE_URL = `https://raw.githubusercontent.com/eSolia/hook-runner/refs/heads/main/`;
 const INDEX_HTML_RAW_URL = `${REPO_RAW_BASE_URL}static/index.html`;
@@ -29,7 +29,7 @@ async function sha256(data: Uint8Array): Promise<string> {
     const hashBuffer = await crypto.subtle.digest('SHA-256', data);
     const hashArray = Array.from(new Uint8Array(hashBuffer));
     const hexHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-    return hexHash;
+    return `sha256:${hexHash}`; // <--- THIS IS THE KEY CHANGE: Prefixing with "sha256:"
 }
 
 // --- Initialization Function to get asset sizes and hashes by reading local files ---
@@ -40,20 +40,20 @@ async function initializeAssetMetadata() {
     const fileContent = await Deno.readFile(filePath);
     
     INDEX_HTML_SIZE = fileContent.byteLength;
-    INDEX_HTML_SHA256 = await sha256(fileContent); // Calculate hash
+    INDEX_HTML_SHA256 = await sha256(fileContent);
 
     console.log(`index.html size: ${INDEX_HTML_SIZE} bytes`);
     console.log(`index.html SHA-256: ${INDEX_HTML_SHA256}`);
   } catch (error) {
     console.error("Error reading index.html locally or calculating hash:", error);
     INDEX_HTML_SIZE = null;
-    INDEX_HTML_SHA256 = null; // Ensure it's null if there's an error
+    INDEX_HTML_SHA256 = null;
   }
 }
 
 // Call initialization functions
-await initializeAssetMetadata(); // Wait for this to complete before starting server/cron
-setupCronJobs(); // Setup cron jobs after initial setup
+await initializeAssetMetadata();
+setupCronJobs();
 
 if (!ADMIN_USERNAME || !ADMIN_PASSWORD) {
   console.warn("WARNING: WEBHOOK_ADMIN_USERNAME or WEBHOOK_ADMIN_PASSWORD environment variables are not set. The UI will not be password protected!");
@@ -61,7 +61,7 @@ if (!ADMIN_USERNAME || !ADMIN_PASSWORD) {
 
 if (!DD_PROJECT_ID || !DD_ACCESS_TOKEN) {
     console.warn("WARNING: DD_PROJECT_ID or DD_ACCESS_TOKEN environment variables are not set. Automated redeployments will not work!");
-} else if (INDEX_HTML_SIZE === null || INDEX_HTML_SHA256 === null) { // Updated check
+} else if (INDEX_HTML_SIZE === null || INDEX_HTML_SHA256 === null) {
     console.warn("WARNING: Could not determine index.html size or hash. Automated redeployments might fail.");
 }
 
@@ -145,7 +145,6 @@ async function triggerDenoDeployRedeploy(): Promise<boolean> {
         console.error("Cannot trigger redeploy: Project ID or Access Token is missing.");
         return false;
     }
-    // Updated check for hash
     if (INDEX_HTML_SIZE === null || INDEX_HTML_SHA256 === null) {
         console.error("Cannot trigger redeploy: index.html size or hash is unknown.");
         return false;
@@ -169,7 +168,7 @@ async function triggerDenoDeployRedeploy(): Promise<boolean> {
                         url: INDEX_HTML_RAW_URL,
                         kind: "file",
                         size: INDEX_HTML_SIZE,
-                        hash: INDEX_HTML_SHA256, // <--- NEW: Add the SHA-256 hash
+                        hash: INDEX_HTML_SHA256,
                     },
                 },
                 branch: 'main',
