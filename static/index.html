@@ -208,7 +208,11 @@
                     showMessage(`Webhook ${id ? 'updated' : 'added'} successfully!`, 'success');
                     webhookForm.reset();
                     resetFormState(); // Reset form to 'Add' mode
+                    
+                    // Show refreshing message immediately
+                    hooksList.innerHTML = '<p class="text-gray-600">Refreshing list...</p>';
                     await fetchHooks(); // Refresh list
+
                     // Trigger redeploy after add/update
                     showMessage('Triggering project redeploy to activate changes...', 'success');
                     await triggerRedeploy();
@@ -229,7 +233,11 @@
                 });
                 if (response.ok) {
                     showMessage('Webhook deleted successfully!', 'success');
+                    
+                    // Show refreshing message immediately
+                    hooksList.innerHTML = '<p class="text-gray-600">Refreshing list...</p>';
                     await fetchHooks(); // Refresh list
+
                     // Trigger redeploy after delete
                     showMessage('Triggering project redeploy to activate changes...', 'success');
                     await triggerRedeploy();
