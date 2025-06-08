@@ -11,6 +11,7 @@
         .form-group { margin-bottom: 1rem; }
         label { display: block; margin-bottom: 0.5rem; font-weight: bold; }
         input[type="text"] { width: 100%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px; }
+        .button-group { display: flex; gap: 0.5rem; } /* For edit/delete buttons */
         button {
             background-color: #4CAF50;
             color: white;
@@ -33,13 +34,25 @@
             justify-content: space-between;
             align-items: center;
         }
-        .hook-item button {
-            background-color: #dc3545;
-            padding: 0.5rem 1rem;
-            font-size: 0.9rem;
+        /* Specific button styles for clarity */
+        .hook-item .edit-button {
+            background-color: #007bff; /* Blue for Edit */
         }
-        .hook-item button:hover {
+        .hook-item .edit-button:hover {
+            background-color: #0056b3;
+        }
+        .hook-item .delete-button {
+            background-color: #dc3545; /* Red for Delete */
+        }
+        .hook-item .delete-button:hover {
             background-color: #c82333;
+        }
+        .main-action-button {
+            background-color: #28a745; /* Green for Add/Save */
+        }
+        .main-action-button.update-mode {
+            background-color: #ffc107; /* Yellow for Update */
+            color: #333;
         }
     </style>
 </head>
@@ -50,7 +63,8 @@
         <div id="messages" class="mb-4"></div>
 
         <div class="mb-8 p-4 bg-blue-50 rounded-lg border border-blue-200">
-            <h2 class="text-xl font-bold mb-4">Add New Webhook</h2>
+            <h2 class="text-xl font-bold mb-4" id="formTitle">Add New Webhook</h2>
+            <input type="hidden" id="editingWebhookId">
             <div class="form-group">
                 <label for="webhookName">Webhook Name:</label>
                 <input type="text" id="webhookName" placeholder="My daily report" class="border p-2 w-full">
@@ -62,10 +76,11 @@
             <div class="form-group">
                 <label for="webhookSchedule">Cron Schedule (UTC):</label>
                 <input type="text" id="webhookSchedule" placeholder="0 0 * * *" value="0 0 * * *" class="border p-2 w-full">
-                <p class="text-sm text-gray-600 mt-1">e.g., <code>0 0 * * *</code> for daily at midnight, <code>*/5 * * * *</code> for every 5 minutes.</p>
+                <p class="text-sm text-gray-600 mt-1">e.g., `0 0 * * *` for daily at midnight, `*/5 * * * *` for every 5 minutes.</p>
                 <p class="text-sm text-gray-600 mt-1">Refer to <a href="https://crontab.guru/" target="_blank" class="text-blue-500 hover:underline">crontab.guru</a> for help with schedules.</p>
             </div>
-            <button id="addWebhookButton" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded w-full">Add Webhook</button>
+            <button id="saveWebhookButton" class="main-action-button text-white font-bold py-2 px-4 rounded w-full">Add Webhook</button>
+            <button id="cancelEditButton" class="bg-gray-500 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded w-full mt-2 hidden">Cancel Edit</button>
         </div>
 
         <div class="mb-8">
@@ -77,7 +92,7 @@
 
         <div class="mt-8 p-4 bg-yellow-50 rounded-lg border border-yellow-200 text-center">
             <h2 class="text-xl font-bold mb-4">Update Application</h2>
-            <p class="mb-4 text-sm text-gray-700">Clicking this will redeploy the application on Deno Deploy. Use this after making changes to <code>main.ts</code> or <code>index.html</code> to ensure they are active.</p>
+            <p class="mb-4 text-sm text-gray-700">Clicking this will redeploy the application on Deno Deploy. Use this after making changes to `main.ts` or `index.html` to ensure they are active.</p>
             <button id="redeployButton" class="bg-purple-600 hover:bg-purple-800 text-white font-bold py-2 px-6 rounded-full">Trigger Project Redeploy</button>
         </div>
 
@@ -98,12 +113,32 @@
 
     <script>
         const messagesDiv = document.getElementById('messages');
+        const webhookNameInput = document.getElementById('webhookName');
+        const webhookUrlInput = document.getElementById('webhookUrl');
+        const webhookScheduleInput = document.getElementById('webhookSchedule');
+        const saveWebhookButton = document.getElementById('saveWebhookButton');
+        const cancelEditButton = document.getElementById('cancelEditButton');
+        const formTitle = document.getElementById('formTitle');
+        const editingWebhookIdInput = document.getElementById('editingWebhookId');
+        let currentHooksData = []; // Store fetched hooks to easily find for editing
 
         function showMessage(message, type) {
             messagesDiv.innerHTML = `<div class="p-3 rounded-md ${type === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}">${message}</div>`;
             setTimeout(() => {
                 messagesDiv.innerHTML = '';
             }, 5000); // Clear message after 5 seconds
+        }
+
+        function resetFormAndState() {
+            webhookNameInput.value = '';
+            webhookUrlInput.value = '';
+            webhookScheduleInput.value = '0 0 * * *'; // Reset to default cron
+            editingWebhookIdInput.value = '';
+            formTitle.textContent = 'Add New Webhook';
+            saveWebhookButton.textContent = 'Add Webhook';
+            saveWebhookButton.classList.remove('update-mode');
+            saveWebhookButton.classList.add('main-action-button');
+            cancelEditButton.classList.add('hidden');
         }
 
         async function fetchHooks() {
@@ -115,6 +150,7 @@
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
                 const hooks = await response.json();
+                currentHooksData = hooks; // Store hooks for easy access during edit
                 webhooksList.innerHTML = ''; // Clear loading message
 
                 if (hooks.length === 0) {
@@ -132,14 +168,34 @@
                             <p class="text-sm text-gray-500">Schedule: ${hook.schedule}</p>
                             <p class="text-xs text-gray-400">ID: ${hook.id}</p>
                         </div>
-                        <div>
+                        <div class="button-group">
+                            <button class="edit-button bg-blue-500 hover:bg-blue-700 text-white font-bold py-1 px-3 rounded" data-id="${hook.id}">Edit</button>
                             <button class="delete-button bg-red-500 hover:bg-red-700 text-white font-bold py-1 px-3 rounded" data-id="${hook.id}">Delete</button>
                         </div>
                     `;
                     webhooksList.appendChild(hookItem);
                 });
 
-                // Add event listeners for delete buttons
+                // Add event listeners for edit and delete buttons
+                document.querySelectorAll('.edit-button').forEach(button => {
+                    button.addEventListener('click', (event) => {
+                        const idToEdit = event.target.dataset.id;
+                        const hookToEdit = currentHooksData.find(h => h.id === idToEdit);
+                        if (hookToEdit) {
+                            webhookNameInput.value = hookToEdit.name;
+                            webhookUrlInput.value = hookToEdit.url;
+                            webhookScheduleInput.value = hookToEdit.schedule;
+                            editingWebhookIdInput.value = hookToEdit.id;
+                            formTitle.textContent = 'Edit Webhook';
+                            saveWebhookButton.textContent = 'Update Webhook';
+                            saveWebhookButton.classList.remove('main-action-button');
+                            saveWebhookButton.classList.add('update-mode');
+                            cancelEditButton.classList.remove('hidden');
+                            window.scrollTo({ top: 0, behavior: 'smooth' }); // Scroll to top for editing
+                        }
+                    });
+                });
+
                 document.querySelectorAll('.delete-button').forEach(button => {
                     button.addEventListener('click', async (event) => {
                         const id = event.target.dataset.id;
@@ -170,41 +226,49 @@
             }
         }
 
-        // Add Webhook Button Event Listener
-        document.getElementById('addWebhookButton').addEventListener('click', async () => {
-            const name = document.getElementById('webhookName').value;
-            const url = document.getElementById('webhookUrl').value;
-            const schedule = document.getElementById('webhookSchedule').value;
+        // Save/Update Webhook Button Event Listener
+        document.getElementById('saveWebhookButton').addEventListener('click', async () => {
+            const name = webhookNameInput.value;
+            const url = webhookUrlInput.value;
+            const schedule = webhookScheduleInput.value;
+            const id = editingWebhookIdInput.value; // Will be empty for new, has ID for edit
 
             if (!name || !url || !schedule) {
                 showMessage('Please fill in all fields.', 'error');
                 return;
             }
 
+            const method = id ? 'PUT' : 'POST';
+            const endpoint = id ? `/hooks/${id}` : '/hooks';
+
             try {
-                const response = await fetch('/hooks', {
-                    method: 'POST',
+                const response = await fetch(endpoint, {
+                    method: method,
                     headers: {
                         'Content-Type': 'application/json',
                     },
                     body: JSON.stringify({ name, url, schedule }),
                 });
 
-                if (response.status === 201) {
-                    showMessage('Webhook added successfully!', 'success');
-                    document.getElementById('webhookName').value = '';
-                    document.getElementById('webhookUrl').value = '';
-                    // Keep schedule value or reset as per preference
+                if (response.ok) {
+                    showMessage(`Webhook ${id ? 'updated' : 'added'} successfully!`, 'success');
+                    resetFormAndState(); // Clear form and reset button
                     fetchHooks(); // Refresh the list
                 } else {
                     const errorText = await response.text();
                     throw new Error(`HTTP error! status: ${response.status} - ${errorText}`);
                 }
             } catch (error) {
-                console.error('Error adding webhook:', error);
-                showMessage(`Failed to add webhook: ${error.message}`, 'error');
+                console.error(`Error ${id ? 'updating' : 'adding'} webhook:`, error);
+                showMessage(`Failed to ${id ? 'update' : 'add'} webhook: ${error.message}`, 'error');
             }
         });
+
+        // Cancel Edit Button Event Listener
+        cancelEditButton.addEventListener('click', () => {
+            resetFormAndState();
+        });
+
 
         // Redeploy button
         const redeployButton = document.getElementById('redeployButton');
