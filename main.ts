@@ -1,3 +1,5 @@
+// --- main.ts (Updated) ---
+
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { join } from "https://deno.land/std@0.224.0/path/mod.ts";
 
@@ -19,7 +21,7 @@ const DD_ACCESS_TOKEN = Deno.env.get("DD_ACCESS_TOKEN");
 
 // --- Global variables for asset metadata (no longer populated at startup for index.html) ---
 // We will fetch index.html content dynamically when needed
-const ENTRY_POINT_URL = `main.ts`; // <--- CHANGED THIS LINE
+const ENTRY_POINT_URL = `main.ts`;
 const REPO_RAW_BASE_URL = `https://raw.githubusercontent.com/eSolia/hook-runner/refs/heads/main/`;
 const INDEX_HTML_RAW_URL = `${REPO_RAW_BASE_URL}static/index.html`;
 
@@ -183,6 +185,29 @@ async function triggerDenoDeployRedeploy(): Promise<boolean> {
 }
 
 
+// --- Function to update a webhook (NEW) ---
+async function updateWebhook(id: string, updatedData: Partial<Webhook>): Promise<Webhook | null> {
+    const key = ["webhooks", id];
+    const entry = await kv.get<Webhook>(key);
+
+    if (!entry.value) {
+        return null; // Webhook not found
+    }
+
+    const currentHook = entry.value;
+    // Apply updates, but ensure ID and createdAt are not changed
+    const newHook: Webhook = {
+        ...currentHook,
+        ...updatedData,
+        id: currentHook.id, // Explicitly keep original ID
+        createdAt: currentHook.createdAt, // Explicitly keep original creation date
+    };
+
+    await kv.set(key, newHook);
+    return newHook;
+}
+
+
 // --- HTTP Server for UI and KV Management ---
 async function handler(req: Request): Promise<Response> {
   const url = new URL(req.url);
@@ -249,6 +274,32 @@ async function handler(req: Request): Promise<Response> {
       return new Response(`Failed to add webhook: ${error.message}`, { status: 500 });
     }
   }
+
+  // API to update a webhook (NEW)
+  if (url.pathname.startsWith("/hooks/") && req.method === "PUT") {
+    const id = url.pathname.split("/").pop(); // Get the ID from the URL
+    if (!id) {
+      return new Response("Webhook ID missing", { status: 400 });
+    }
+
+    try {
+      const data = await req.json(); // Get updated fields from request body
+      const updatedHook = await updateWebhook(id, data); // Use the new updateWebhook function
+
+      if (!updatedHook) {
+        return new Response("Webhook not found", { status: 404 });
+      }
+
+      return new Response(JSON.stringify(updatedHook), {
+        status: 200, // 200 OK for successful update
+        headers: { "Content-Type": "application/json" },
+      });
+    } catch (error) {
+      console.error("Error updating webhook:", error);
+      return new Response(`Failed to update webhook: ${error.message}`, { status: 500 });
+    }
+  }
+
 
   // API to delete a webhook
   if (url.pathname.startsWith("/hooks/") && req.method === "DELETE") {
