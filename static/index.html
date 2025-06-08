@@ -50,9 +50,41 @@
         .main-action-button {
             background-color: #28a745; /* Green for Add/Save */
         }
-        .main-action-button.update-mode {
-            background-color: #ffc107; /* Yellow for Update */
+
+        /* Modal specific styles */
+        .modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        .modal-content {
+            background-color: white;
+            padding: 2rem;
+            border-radius: 8px;
+            width: 90%;
+            max-width: 500px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            position: relative;
+        }
+        .modal-close-button {
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+            font-size: 1.5rem;
+            cursor: pointer;
+            background: none;
+            border: none;
             color: #333;
+        }
+        .hidden {
+            display: none;
         }
     </style>
 </head>
@@ -63,8 +95,7 @@
         <div id="messages" class="mb-4"></div>
 
         <div class="mb-8 p-4 bg-blue-50 rounded-lg border border-blue-200">
-            <h2 class="text-xl font-bold mb-4" id="formTitle">Add New Webhook</h2>
-            <input type="hidden" id="editingWebhookId">
+            <h2 class="text-xl font-bold mb-4">Add New Webhook</h2>
             <div class="form-group">
                 <label for="webhookName">Webhook Name:</label>
                 <input type="text" id="webhookName" placeholder="My daily report" class="border p-2 w-full">
@@ -79,8 +110,7 @@
                 <p class="text-sm text-gray-600 mt-1">e.g., `0 0 * * *` for daily at midnight, `*/5 * * * *` for every 5 minutes.</p>
                 <p class="text-sm text-gray-600 mt-1">Refer to <a href="https://crontab.guru/" target="_blank" class="text-blue-500 hover:underline">crontab.guru</a> for help with schedules.</p>
             </div>
-            <button id="saveWebhookButton" class="main-action-button text-white font-bold py-2 px-4 rounded w-full">Add Webhook</button>
-            <button id="cancelEditButton" class="bg-gray-500 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded w-full mt-2 hidden">Cancel Edit</button>
+            <button id="addWebhookButton" class="main-action-button text-white font-bold py-2 px-4 rounded w-full">Add Webhook</button>
         </div>
 
         <div class="mb-8">
@@ -93,7 +123,7 @@
         <div class="mt-8 p-4 bg-yellow-50 rounded-lg border border-yellow-200 text-center">
             <h2 class="text-xl font-bold mb-4">Update Application</h2>
             <p class="mb-4 text-sm text-gray-700">Clicking this will redeploy the application on Deno Deploy. Use this after making changes to `main.ts` or `index.html` to ensure they are active.</p>
-            <button id="redeployButton" class="bg-cyan-600 hover:bg-cyan-800 text-white font-bold py-2 px-6 rounded-full">Trigger Project Redeploy</button>
+            <button id="redeployButton" class="bg-purple-600 hover:bg-purple-800 text-white font-bold py-2 px-6 rounded-full">Trigger Project Redeploy</button>
         </div>
 
         <div class="mt-8 p-4 bg-gray-100 rounded-lg" style="display: none;">
@@ -111,16 +141,48 @@
 
     </div>
 
+    <div id="editWebhookModal" class="modal hidden">
+        <div class="modal-content">
+            <button class="modal-close-button" id="closeEditModalButton">&times;</button>
+            <h2 class="text-xl font-bold mb-4">Edit Webhook</h2>
+            <input type="hidden" id="editWebhookId">
+            <div class="form-group">
+                <label for="editWebhookName">Webhook Name:</label>
+                <input type="text" id="editWebhookName" class="border p-2 w-full">
+            </div>
+            <div class="form-group">
+                <label for="editWebhookUrl">Webhook URL:</label>
+                <input type="text" id="editWebhookUrl" class="border p-2 w-full">
+            </div>
+            <div class="form-group">
+                <label for="editWebhookSchedule">Cron Schedule (UTC):</label>
+                <input type="text" id="editWebhookSchedule" class="border p-2 w-full">
+            </div>
+            <div class="button-group mt-4">
+                <button id="updateWebhookButton" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded w-full">Update Webhook</button>
+                <button id="cancelModalEditButton" class="bg-gray-500 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded w-full">Cancel</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         const messagesDiv = document.getElementById('messages');
         const webhookNameInput = document.getElementById('webhookName');
         const webhookUrlInput = document.getElementById('webhookUrl');
         const webhookScheduleInput = document.getElementById('webhookSchedule');
-        const saveWebhookButton = document.getElementById('saveWebhookButton');
-        const cancelEditButton = document.getElementById('cancelEditButton');
-        const formTitle = document.getElementById('formTitle');
-        const editingWebhookIdInput = document.getElementById('editingWebhookId');
+        const addWebhookButton = document.getElementById('addWebhookButton');
         let currentHooksData = []; // Store fetched hooks to easily find for editing
+
+        // Modal elements
+        const editWebhookModal = document.getElementById('editWebhookModal');
+        const closeEditModalButton = document.getElementById('closeEditModalButton');
+        const editWebhookIdInput = document.getElementById('editWebhookId');
+        const editWebhookNameInput = document.getElementById('editWebhookName');
+        const editWebhookUrlInput = document.getElementById('editWebhookUrl');
+        const editWebhookScheduleInput = document.getElementById('editWebhookSchedule');
+        const updateWebhookButton = document.getElementById('updateWebhookButton');
+        const cancelModalEditButton = document.getElementById('cancelModalEditButton');
+
 
         function showMessage(message, type) {
             messagesDiv.innerHTML = `<div class="p-3 rounded-md ${type === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}">${message}</div>`;
@@ -129,16 +191,27 @@
             }, 5000); // Clear message after 5 seconds
         }
 
-        function resetFormAndState() {
+        function resetAddForm() {
             webhookNameInput.value = '';
             webhookUrlInput.value = '';
             webhookScheduleInput.value = '0 0 * * *'; // Reset to default cron
-            editingWebhookIdInput.value = '';
-            formTitle.textContent = 'Add New Webhook';
-            saveWebhookButton.textContent = 'Add Webhook';
-            saveWebhookButton.classList.remove('update-mode');
-            saveWebhookButton.classList.add('main-action-button');
-            cancelEditButton.classList.add('hidden');
+        }
+
+        function showEditModal(hook) {
+            editWebhookIdInput.value = hook.id;
+            editWebhookNameInput.value = hook.name;
+            editWebhookUrlInput.value = hook.url;
+            editWebhookScheduleInput.value = hook.schedule;
+            editWebhookModal.classList.remove('hidden');
+        }
+
+        function hideEditModal() {
+            editWebhookModal.classList.add('hidden');
+            // Clear modal inputs
+            editWebhookIdInput.value = '';
+            editWebhookNameInput.value = '';
+            editWebhookUrlInput.value = '';
+            editWebhookScheduleInput.value = '';
         }
 
         async function fetchHooks() {
@@ -182,16 +255,7 @@
                         const idToEdit = event.target.dataset.id;
                         const hookToEdit = currentHooksData.find(h => h.id === idToEdit);
                         if (hookToEdit) {
-                            webhookNameInput.value = hookToEdit.name;
-                            webhookUrlInput.value = hookToEdit.url;
-                            webhookScheduleInput.value = hookToEdit.schedule;
-                            editingWebhookIdInput.value = hookToEdit.id;
-                            formTitle.textContent = 'Edit Webhook';
-                            saveWebhookButton.textContent = 'Update Webhook';
-                            saveWebhookButton.classList.remove('main-action-button');
-                            saveWebhookButton.classList.add('update-mode');
-                            cancelEditButton.classList.remove('hidden');
-                            window.scrollTo({ top: 0, behavior: 'smooth' }); // Scroll to top for editing
+                            showEditModal(hookToEdit);
                         }
                     });
                 });
@@ -226,24 +290,55 @@
             }
         }
 
-        // Save/Update Webhook Button Event Listener
-        document.getElementById('saveWebhookButton').addEventListener('click', async () => {
-            const name = webhookNameInput.value;
-            const url = webhookUrlInput.value;
-            const schedule = webhookScheduleInput.value;
-            const id = editingWebhookIdInput.value; // Will be empty for new, has ID for edit
+        // Add Webhook Button Event Listener (for new webhooks)
+        addWebhookButton.addEventListener('click', async () => {
+            const name = webhookNameInput.value.trim();
+            const url = webhookUrlInput.value.trim();
+            const schedule = webhookScheduleInput.value.trim();
 
             if (!name || !url || !schedule) {
                 showMessage('Please fill in all fields.', 'error');
                 return;
             }
 
-            const method = id ? 'PUT' : 'POST';
-            const endpoint = id ? `/hooks/${id}` : '/hooks';
+            try {
+                const response = await fetch('/hooks', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ name, url, schedule }),
+                });
+
+                if (response.status === 201) {
+                    showMessage('Webhook added successfully!', 'success');
+                    resetAddForm();
+                    fetchHooks(); // Refresh the list
+                } else {
+                    const errorText = await response.text();
+                    throw new Error(`HTTP error! status: ${response.status} - ${errorText}`);
+                }
+            } catch (error) {
+                console.error('Error adding webhook:', error);
+                showMessage(`Failed to add webhook: ${error.message}`, 'error');
+            }
+        });
+
+        // Update Webhook Button Event Listener (in modal)
+        updateWebhookButton.addEventListener('click', async () => {
+            const id = editWebhookIdInput.value;
+            const name = editWebhookNameInput.value.trim();
+            const url = editWebhookUrlInput.value.trim();
+            const schedule = editWebhookScheduleInput.value.trim();
+
+            if (!name || !url || !schedule) {
+                showMessage('Please fill in all fields in the modal.', 'error');
+                return;
+            }
 
             try {
-                const response = await fetch(endpoint, {
-                    method: method,
+                const response = await fetch(`/hooks/${id}`, {
+                    method: 'PUT',
                     headers: {
                         'Content-Type': 'application/json',
                     },
@@ -251,24 +346,28 @@
                 });
 
                 if (response.ok) {
-                    showMessage(`Webhook ${id ? 'updated' : 'added'} successfully!`, 'success');
-                    resetFormAndState(); // Clear form and reset button
+                    showMessage('Webhook updated successfully!', 'success');
+                    hideEditModal();
                     fetchHooks(); // Refresh the list
                 } else {
                     const errorText = await response.text();
                     throw new Error(`HTTP error! status: ${response.status} - ${errorText}`);
                 }
             } catch (error) {
-                console.error(`Error ${id ? 'updating' : 'adding'} webhook:`, error);
-                showMessage(`Failed to ${id ? 'update' : 'add'} webhook: ${error.message}`, 'error');
+                console.error('Error updating webhook:', error);
+                showMessage(`Failed to update webhook: ${error.message}`, 'error');
             }
         });
 
-        // Cancel Edit Button Event Listener
-        cancelEditButton.addEventListener('click', () => {
-            resetFormAndState();
+        // Close modal buttons
+        closeEditModalButton.addEventListener('click', hideEditModal);
+        cancelModalEditButton.addEventListener('click', hideEditModal);
+        // Close modal if clicking outside content
+        editWebhookModal.addEventListener('click', (event) => {
+            if (event.target === editWebhookModal) {
+                hideEditModal();
+            }
         });
-
 
         // Redeploy button
         const redeployButton = document.getElementById('redeployButton');
