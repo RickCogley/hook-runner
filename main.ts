@@ -14,17 +14,43 @@ const kv = await Deno.openKv(); // Open Deno KV database
 // --- Configuration from Environment Variables ---
 const ADMIN_USERNAME = Deno.env.get("WEBHOOK_ADMIN_USERNAME");
 const ADMIN_PASSWORD = Deno.env.get("WEBHOOK_ADMIN_PASSWORD");
-// UPDATED: Deno Deploy Project ID and Access Token for redeployment
-const DD_PROJECT_ID = Deno.env.get("DD_PROJECT_ID"); // Changed from DENO_DEPLOY_PROJECT_ID
-const DD_ACCESS_TOKEN = Deno.env.get("DD_ACCESS_TOKEN"); // Changed from DENO_DEPLOY_ACCESS_TOKEN
+const DD_PROJECT_ID = Deno.env.get("DD_PROJECT_ID");
+const DD_ACCESS_TOKEN = Deno.env.get("DD_ACCESS_TOKEN");
 
+// --- Global variables for asset metadata (will be populated on startup) ---
+let INDEX_HTML_SIZE: number | null = null;
+const ENTRY_POINT_URL = `https://raw.githubusercontent.com/eSolia/hook-runner/refs/heads/main/main.ts`;
+const REPO_RAW_BASE_URL = `https://raw.githubusercontent.com/eSolia/hook-runner/refs/heads/main/`;
+const INDEX_HTML_RAW_URL = `${REPO_RAW_BASE_URL}static/index.html`;
+
+// --- Initialization Function to get asset sizes ---
+async function initializeAssetMetadata() {
+  console.log("Fetching asset metadata (e.g., index.html size)...");
+  try {
+    const response = await fetch(INDEX_HTML_RAW_URL, { method: 'HEAD' });
+    if (response.ok && response.headers.has('content-length')) {
+      INDEX_HTML_SIZE = parseInt(response.headers.get('content-length')!, 10);
+      console.log(`index.html size: ${INDEX_HTML_SIZE} bytes`);
+    } else {
+      console.error(`Failed to get content-length for index.html: Status ${response.status}`);
+    }
+  } catch (error) {
+    console.error("Error fetching index.html metadata:", error);
+  }
+}
+
+// Call initialization functions
+await initializeAssetMetadata(); // Wait for this to complete before starting server/cron
+setupCronJobs(); // Setup cron jobs after initial setup
 
 if (!ADMIN_USERNAME || !ADMIN_PASSWORD) {
   console.warn("WARNING: WEBHOOK_ADMIN_USERNAME or WEBHOOK_ADMIN_PASSWORD environment variables are not set. The UI will not be password protected!");
 }
 
-if (!DD_PROJECT_ID || !DD_ACCESS_TOKEN) { // Updated check
+if (!DD_PROJECT_ID || !DD_ACCESS_TOKEN) {
     console.warn("WARNING: DD_PROJECT_ID or DD_ACCESS_TOKEN environment variables are not set. Automated redeployments will not work!");
+} else if (INDEX_HTML_SIZE === null) {
+    console.warn("WARNING: Could not determine index.html size. Automated redeployments might fail.");
 }
 
 
@@ -38,9 +64,6 @@ async function pingWebhook(webhookUrl: string, name: string) {
   try {
     const response = await fetch(webhookUrl, {
       method: 'POST',
-      // You can add headers here if needed, e.g., for specific webhook services
-      // headers: { 'Content-Type': 'application/json' },
-      // body: JSON.stringify({ event: 'scheduled_build' }), // Example body
     });
 
     if (response.ok) {
@@ -70,13 +93,10 @@ async function setupCronJobs() {
   console.log("Finished setting up Deno cron jobs.");
 }
 
-// Call this once on startup to register all cron jobs
-setupCronJobs();
 
 // --- HTTP Basic Authentication Middleware ---
 function basicAuth(req: Request): Response | null {
   if (!ADMIN_USERNAME || !ADMIN_PASSWORD) {
-    // If auth is not configured, allow access
     return null;
   }
 
@@ -91,12 +111,12 @@ function basicAuth(req: Request): Response | null {
     });
   }
 
-  const encodedCreds = authHeader.substring(6); // "Basic ".length = 6
+  const encodedCreds = authHeader.substring(6);
   const decodedCreds = atob(encodedCreds);
   const [username, password] = decodedCreds.split(":");
 
   if (username === ADMIN_USERNAME && password === ADMIN_PASSWORD) {
-    return null; // Authentication successful, proceed
+    return null;
   } else {
     return new Response("Unauthorized", {
       status: 401,
@@ -113,14 +133,13 @@ async function triggerDenoDeployRedeploy(): Promise<boolean> {
         console.error("Cannot trigger redeploy: Project ID or Access Token is missing.");
         return false;
     }
+    if (INDEX_HTML_SIZE === null) {
+        console.error("Cannot trigger redeploy: index.html size is unknown. Please check logs for previous errors.");
+        return false;
+    }
 
     const deployUrl = `https://api.deno.com/v1/projects/${DD_PROJECT_ID}/deployments`;
     console.log(`Attempting to trigger redeploy for project ID: ${DD_PROJECT_ID}`);
-
-    const entryPoint = `https://raw.githubusercontent.com/eSolia/hook-runner/refs/heads/main/main.ts`;
-
-    // Define the base URL for raw content from your repository
-    const repoRawBaseUrl = `https://raw.githubusercontent.com/eSolia/hook-runner/refs/heads/main/`;
 
     try {
         const response = await fetch(deployUrl, {
@@ -130,21 +149,14 @@ async function triggerDenoDeployRedeploy(): Promise<boolean> {
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-                entryPointUrl: entryPoint,
+                entryPointUrl: ENTRY_POINT_URL, // Using global constant
                 assets: {
                     "static/index.html": {
                         path: "static/index.html",
-                        url: `${repoRawBaseUrl}static/index.html`,
-                        // NEW: Add 'kind' field
-                        kind: "file", // <--- THIS IS THE KEY CHANGE
+                        url: INDEX_HTML_RAW_URL, // Using global constant
+                        kind: "file",
+                        size: INDEX_HTML_SIZE, // <--- THIS IS THE KEY CHANGE
                     },
-                    // Add other assets here if you had more files in your 'static' folder
-                    // For example:
-                    // "static/styles.css": {
-                    //    path: "static/styles.css",
-                    //    url: `${repoRawBaseUrl}static/styles.css`,
-                    //    kind: "file",
-                    // },
                 },
                 branch: 'main',
             }),
@@ -169,7 +181,7 @@ async function triggerDenoDeployRedeploy(): Promise<boolean> {
 async function handler(req: Request): Promise<Response> {
   const url = new URL(req.url);
 
-  // Apply basic authentication to all routes (except perhaps public assets if you had any)
+  // Apply basic authentication to all routes
   const authResponse = basicAuth(req);
   if (authResponse) {
     return authResponse;
@@ -248,7 +260,7 @@ async function handler(req: Request): Promise<Response> {
     }
   }
 
-  // NEW: API endpoint to trigger redeploy
+  // API endpoint to trigger redeploy
   if (url.pathname === "/redeploy" && req.method === "POST") {
     console.log("Redeploy endpoint hit.");
     const success = await triggerDenoDeployRedeploy();
