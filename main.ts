@@ -1,4 +1,4 @@
-// --- main.ts (Updated) ---
+// --- main.ts (Latest Correct Version) ---
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { join } from "https://deno.land/std@0.224.0/path/mod.ts";
@@ -19,13 +19,12 @@ const ADMIN_PASSWORD = Deno.env.get("WEBHOOK_ADMIN_PASSWORD");
 const DD_PROJECT_ID = Deno.env.get("DD_PROJECT_ID");
 const DD_ACCESS_TOKEN = Deno.env.get("DD_ACCESS_TOKEN");
 
-// --- Global variables for asset metadata (no longer populated at startup for index.html) ---
-// We will fetch index.html content dynamically when needed
-const ENTRY_POINT_URL = `main.ts`;
+// --- Global variables for asset metadata (will be populated dynamically from GitHub for index.html) ---
+const ENTRY_POINT_URL = `main.ts`; // CORRECTED: Just the file name relative to the project root
 const REPO_RAW_BASE_URL = `https://raw.githubusercontent.com/eSolia/hook-runner/refs/heads/main/`;
 const INDEX_HTML_RAW_URL = `${REPO_RAW_BASE_URL}static/index.html`;
 
-// --- Utility function to calculate SHA-256 hash (still useful for general purpose, but not for API asset directly) ---
+// --- Utility function to calculate SHA-256 hash (still useful for general purpose, not directly for API asset in this deployment method) ---
 async function sha256(data: Uint8Array): Promise<string> {
     const hashBuffer = await crypto.subtle.digest('SHA-256', data);
     const hashArray = Array.from(new Uint8Array(hashBuffer));
@@ -41,7 +40,7 @@ async function initializeApp() {
 }
 
 // Call initialization functions
-await initializeApp(); // Call the simpler init function
+await initializeApp();
 
 if (!ADMIN_USERNAME || !ADMIN_PASSWORD) {
   console.warn("WARNING: WEBHOOK_ADMIN_USERNAME or WEBHOOK_ADMIN_PASSWORD environment variables are not set. The UI will not be password protected!");
@@ -132,7 +131,7 @@ async function triggerDenoDeployRedeploy(): Promise<boolean> {
         return false;
     }
 
-    // Fetch index.html content dynamically
+    // Fetch index.html content dynamically from the raw GitHub URL
     let indexHtmlContent: string;
     try {
         console.log(`Fetching index.html content from: ${INDEX_HTML_RAW_URL}`);
@@ -158,9 +157,9 @@ async function triggerDenoDeployRedeploy(): Promise<boolean> {
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-                entryPointUrl: ENTRY_POINT_URL,
+                entryPointUrl: ENTRY_POINT_URL, // This is now "main.ts"
                 assets: {
-                    "static/index.html": {
+                    "static/index.html": { // Specify path in deployment
                         kind: "file",
                         content: indexHtmlContent,
                         encoding: "utf-8",
