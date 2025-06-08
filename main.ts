@@ -1,4 +1,4 @@
-// --- main.ts (Updated for Deno Deploy Log Integration) ---
+// --- main.ts (Updated for Correct Deno Deploy Log Endpoint) ---
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { join } from "https://deno.land/std@0.224.0/path/mod.ts";
@@ -85,17 +85,9 @@ const DD_PROJECT_ID = Deno.env.get("DD_PROJECT_ID");
 const DD_ACCESS_TOKEN = Deno.env.get("DD_ACCESS_TOKEN");
 
 // --- Global variables for asset metadata ---
-const ENTRY_POINT_URL = `main.ts`;
-const REPO_RAW_BASE_URL = `https://raw.githubusercontent.com/eSolia/hook-runner/refs/heads/main/`;
+const ENTRY_POINT_URL = `main.ts`; // Relative to the project root in Deno Deploy
+const REPO_RAW_BASE_URL = `https://raw.githubusercontent.com/eSolia/hook-runner/refs/heads/main/`; // Assuming a 'main' branch
 const INDEX_HTML_RAW_URL = `${REPO_RAW_BASE_URL}static/index.html`;
-
-// --- Utility function to calculate SHA-256 hash ---
-async function sha256(data: Uint8Array): Promise<string> {
-    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    const hexHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-    return `sha256:${hexHash}`;
-}
 
 // --- Environment Variable Warnings ---
 if (!ADMIN_USERNAME || !ADMIN_PASSWORD) {
@@ -256,11 +248,18 @@ async function fetchDenoDeployLogs(): Promise<DenoDeployLogEntry[]> {
     }
 
     // 2. Fetch logs for the latest deployment
-    const logsUrl = `https://api.deno.com/v1/projects/${DD_PROJECT_ID}/deployments/${deploymentId}/logs`;
+    // Use the correct app_logs endpoint and specify JSON format
+    const now = new Date();
+    const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000); // 24 hours ago
+    const sinceParam = twentyFourHoursAgo.toISOString();
+    const untilParam = now.toISOString();
+
+    const logsUrl = `https://api.deno.com/v1/deployments/${deploymentId}/app_logs?since=${sinceParam}&until=${untilParam}`;
     try {
         const logsResponse = await fetch(logsUrl, {
             headers: {
                 'Authorization': `Bearer ${DD_ACCESS_TOKEN}`,
+                'Accept': 'application/json', // Request JSON array format
             },
         });
 
@@ -268,22 +267,7 @@ async function fetchDenoDeployLogs(): Promise<DenoDeployLogEntry[]> {
             throw new Error(`Failed to fetch logs: ${logsResponse.status} - ${await logsResponse.text()}`);
         }
 
-        // The Deno Deploy logs endpoint returns a stream of JSON objects, one per line.
-        // We'll read the response as text and parse each line.
-        const logText = await logsResponse.text();
-        const rawLogLines = logText.split('\n').filter(line => line.trim() !== '');
-
-        const parsedLogs: DenoDeployLogEntry[] = [];
-        for (const line of rawLogLines) {
-            try {
-                const logEntry = JSON.parse(line);
-                parsedLogs.push(logEntry);
-            } catch (jsonParseError) {
-                console.warn(`Could not parse log line as JSON: ${line}`, jsonParseError);
-                // Fallback: if it's not JSON, treat it as a plain message
-                parsedLogs.push({ message: line, level: "info", region: "unknown", timestamp: new Date().toISOString() });
-            }
-        }
+        const parsedLogs: DenoDeployLogEntry[] = await logsResponse.json();
         return parsedLogs;
 
     } catch (error) {
