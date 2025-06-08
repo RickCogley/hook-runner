@@ -1,8 +1,8 @@
-// --- main.ts (Latest Corrected Version to fix "Deno.cron top-level only" error) ---
+// --- main.ts (Latest Corrected Version for Deno.cron "top-level only" error and croner module import) ---
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { join } from "https://deno.land/std@0.224.0/path/mod.ts";
-import { Cron } from "https://deno.land/x/cron_parser@v0.0.1/mod.ts"; // NEW: Import Cron parser
+import { Cron } from "https://deno.land/x/croner@8.1.2/dist/croner.js"; // CORRECTED: Updated import for croner module
 
 interface Webhook {
   id: string; // UUID for unique identification
