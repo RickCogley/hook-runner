@@ -1,4 +1,4 @@
-// --- main.ts (Latest Corrected Version for Deno.cron "top-level only" error) ---
+// --- main.ts (Latest Corrected Version to fix "Deno.cron top-level only" error) ---
 
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { join } from "https://deno.land/std@0.224.0/path/mod.ts";
@@ -96,6 +96,7 @@ if (!ADMIN_USERNAME || !ADMIN_PASSWORD) {
 if (!DD_PROJECT_ID || !DD_ACCESS_TOKEN) {
     console.warn("WARNING: DD_PROJECT_ID or DD_ACCESS_TOKEN environment variables are not set. Automated redeployments will not work!");
 }
+
 
 // --- Generic Webhook Pinger Function ---
 async function pingWebhook(webhookUrl: string, name: string) {
