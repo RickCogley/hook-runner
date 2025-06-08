@@ -1,6 +1,5 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { join } from "https://deno.land/std@0.224.0/path/mod.ts";
-// REMOVED: import { Kv } from "https://deno.land/x/fresh@1.6.0/server.ts";
 
 interface Webhook {
   id: string; // UUID for unique identification
@@ -10,16 +9,24 @@ interface Webhook {
   createdAt: string;
 }
 
-// Use Deno.openKv() directly
-const kv = await Deno.openKv();
+const kv = await Deno.openKv(); // Open Deno KV database
 
 // --- Configuration from Environment Variables ---
 const ADMIN_USERNAME = Deno.env.get("WEBHOOK_ADMIN_USERNAME");
 const ADMIN_PASSWORD = Deno.env.get("WEBHOOK_ADMIN_PASSWORD");
+// UPDATED: Deno Deploy Project ID and Access Token for redeployment
+const DD_PROJECT_ID = Deno.env.get("DD_PROJECT_ID"); // Changed from DENO_DEPLOY_PROJECT_ID
+const DD_ACCESS_TOKEN = Deno.env.get("DD_ACCESS_TOKEN"); // Changed from DENO_DEPLOY_ACCESS_TOKEN
+
 
 if (!ADMIN_USERNAME || !ADMIN_PASSWORD) {
   console.warn("WARNING: WEBHOOK_ADMIN_USERNAME or WEBHOOK_ADMIN_PASSWORD environment variables are not set. The UI will not be password protected!");
 }
+
+if (!DD_PROJECT_ID || !DD_ACCESS_TOKEN) { // Updated check
+    console.warn("WARNING: DD_PROJECT_ID or DD_ACCESS_TOKEN environment variables are not set. Automated redeployments will not work!");
+}
+
 
 // --- Generic Webhook Pinger Function ---
 async function pingWebhook(webhookUrl: string, name: string) {
@@ -49,10 +56,10 @@ async function pingWebhook(webhookUrl: string, name: string) {
 // --- Deno.cron Job Registration ---
 async function setupCronJobs() {
   console.log("Setting up Deno cron jobs from KV...");
-  const iter = kv.list<Webhook>({ prefix: ["webhooks"] }); // Changed KV prefix
+  const iter = kv.list<Webhook>({ prefix: ["webhooks"] });
   for await (const entry of iter) {
     const hook = entry.value;
-    const cronName = `generic_webhook_${hook.id}`; // Changed cron name prefix
+    const cronName = `generic_webhook_${hook.id}`;
 
     Deno.cron(cronName, hook.schedule, async () => {
       console.log(`Triggering scheduled webhook: ${hook.name} (ID: ${hook.id})`);
@@ -99,6 +106,45 @@ function basicAuth(req: Request): Response | null {
     });
   }
 }
+
+// --- Function to trigger Deno Deploy redeploy ---
+async function triggerDenoDeployRedeploy(): Promise<boolean> {
+    if (!DD_PROJECT_ID || !DD_ACCESS_TOKEN) { // Updated check
+        console.error("Cannot trigger redeploy: Project ID or Access Token is missing.");
+        return false;
+    }
+
+    const deployUrl = `https://api.deno.com/v1/projects/${DD_PROJECT_ID}/deployments`; // Updated URL
+    console.log(`Attempting to trigger redeploy for project ID: ${DD_PROJECT_ID}`);
+
+    try {
+        const response = await fetch(deployUrl, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${DD_ACCESS_TOKEN}`, // Updated token
+                'Content-Type': 'application/json',
+            },
+            // The body can be empty or specify a branch, etc.
+            // For a "redeploy current production deployment", it's usually enough
+            // to just POST to the /deployments endpoint for the project.
+            // If you want to redeploy a specific branch, you'd add a 'branch' field:
+            // body: JSON.stringify({ branch: 'main' }),
+        });
+
+        if (response.ok) {
+            console.log("Deno Deploy redeploy request sent successfully.");
+            return true;
+        } else {
+            const errorText = await response.text();
+            console.error(`Failed to trigger Deno Deploy redeploy. Status: ${response.status}, Response: ${errorText}`);
+            return false;
+        }
+    } catch (error) {
+        console.error("Error during Deno Deploy redeploy API call:", error);
+        return false;
+    }
+}
+
 
 // --- HTTP Server for UI and KV Management ---
 async function handler(req: Request): Promise<Response> {
@@ -180,6 +226,17 @@ async function handler(req: Request): Promise<Response> {
     } catch (error) {
       console.error("Error deleting webhook:", error);
       return new Response(`Failed to delete webhook: ${error.message}`, { status: 500 });
+    }
+  }
+
+  // NEW: API endpoint to trigger redeploy
+  if (url.pathname === "/redeploy" && req.method === "POST") {
+    console.log("Redeploy endpoint hit.");
+    const success = await triggerDenoDeployRedeploy();
+    if (success) {
+        return new Response("Redeploy triggered successfully.", { status: 200 });
+    } else {
+        return new Response("Failed to trigger redeploy.", { status: 500 });
     }
   }
 

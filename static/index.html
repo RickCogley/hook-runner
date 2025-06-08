@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Webhook Scheduler</title>
+    <title>Generic Webhook Scheduler</title>
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
     <style>
         body { font-family: sans-serif; }
@@ -23,8 +23,7 @@
         button:hover { background-color: #45a049; }
         .error-message { color: red; margin-top: 0.5rem; }
         .success-message { color: green; margin-top: 0.5rem; }
-        .warning-message { color: orange; margin-top: 0.5rem; }
-        .webhook-item {
+        .hook-item {
             background-color: #f9f9f9;
             border: 1px solid #eee;
             padding: 1rem;
@@ -34,14 +33,30 @@
             justify-content: space-between;
             align-items: center;
         }
-        .webhook-details { flex-grow: 1; }
-        .webhook-actions button {
+        .hook-details { flex-grow: 1; }
+        .hook-actions button {
             background-color: #dc3545;
             margin-left: 0.5rem;
             padding: 0.5rem 1rem;
             font-size: 0.9rem;
         }
-        .webhook-actions button:hover { background-color: #c82333; }
+        .hook-actions button:hover { background-color: #c82333; }
+        .important-note {
+            background-color: #fff3cd;
+            border-left: 5px solid #ffc107;
+            padding: 1rem;
+            margin-top: 1.5rem;
+            color: #664d03;
+            border-radius: 4px;
+        }
+        #redeploy-button {
+            background-color: #007bff; /* Blue color */
+            margin-top: 1rem;
+            width: 100%;
+        }
+        #redeploy-button:hover {
+            background-color: #0056b3;
+        }
     </style>
 </head>
 <body class="bg-gray-100">
@@ -50,18 +65,14 @@
 
         <div id="messages" class="mb-4"></div>
 
-        <div class="warning-message p-3 rounded-md mb-4 border border-orange-400 bg-orange-100">
-            <strong>Important:</strong> After adding or deleting a webhook, you must trigger a new deployment of this Deno Deploy project for the changes to take effect on the cron schedule.
-        </div>
-
         <h2 class="text-2xl font-semibold mb-4">Add New Webhook</h2>
-        <form id="add-webhook-form" class="mb-8">
+        <form id="add-hook-form" class="mb-8">
             <div class="form-group">
-                <label for="name">Webhook Name (e.g., Daily Content Sync):</label>
+                <label for="name">Webhook Name (e.g., Daily Data Sync, Weekly Cache Clear):</label>
                 <input type="text" id="name" name="name" required>
             </div>
             <div class="form-group">
-                <label for="url">Webhook URL (e.g., https://api.example.com/webhook/trigger):</label>
+                <label for="url">Webhook URL (HTTP POST endpoint):</label>
                 <input type="text" id="url" name="url" required>
             </div>
             <div class="form-group">
@@ -75,74 +86,86 @@
         </form>
 
         <h2 class="text-2xl font-semibold mb-4">Scheduled Webhooks</h2>
-        <div id="webhooks-list">
-            <p>Loading webhooks...</p>
+        <div id="hooks-list">
+            <p>Loading hooks...</p>
+        </div>
+
+        <div class="important-note mt-6">
+            <p><strong>Important Note:</strong> After adding or deleting a webhook, you must trigger a new deployment for the changes to take effect on the scheduled cron jobs. You can do so by clicking the button below.</p>
+            <button id="redeploy-button">Trigger Project Redeploy</button>
         </div>
     </div>
 
     <script>
         const messagesDiv = document.getElementById('messages');
-        const addWebhookForm = document.getElementById('add-webhook-form');
-        const webhooksListDiv = document.getElementById('webhooks-list');
+        const addHookForm = document.getElementById('add-hook-form');
+        const hooksListDiv = document.getElementById('hooks-list');
+        const redeployButton = document.getElementById('redeploy-button'); // New element
 
         function showMessage(message, type) {
             messagesDiv.innerHTML = `<div class="${type}-message p-3 rounded-md mb-2">${message}</div>`;
             setTimeout(() => {
                 messagesDiv.innerHTML = '';
-            }, 5000); // Clear message after 5 seconds
+            }, 7000); // Clear message after 7 seconds
         }
 
-        async function fetchWebhooks() {
+        async function fetchHooks() {
             try {
                 const response = await fetch('/hooks');
                 if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
+                    if (response.status === 401 || response.status === 403) {
+                        showMessage('Authentication required or failed. Please refresh and try again.', 'error');
+                        hooksListDiv.innerHTML = '<p class="error-message">Authentication required.</p>';
+                    } else {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
                 }
-                const webhooks = await response.json();
-                renderWebhooks(webhooks);
+                const hooks = await response.json();
+                renderHooks(hooks);
             } catch (error) {
-                console.error('Error fetching webhooks:', error);
-                showMessage('Failed to load webhooks. Please try again.', 'error');
-                webhooksListDiv.innerHTML = '<p class="error-message">Error loading webhooks.</p>';
+                console.error('Error fetching hooks:', error);
+                if (!messagesDiv.innerHTML.includes('Authentication')) {
+                    showMessage('Failed to load webhooks. Please try again.', 'error');
+                }
+                hooksListDiv.innerHTML = '<p class="error-message">Error loading hooks.</p>';
             }
         }
 
-        function renderWebhooks(webhooks) {
-            webhooksListDiv.innerHTML = '';
-            if (webhooks.length === 0) {
-                webhooksListDiv.innerHTML = '<p>No webhooks configured yet.</p>';
+        function renderHooks(hooks) {
+            hooksListDiv.innerHTML = '';
+            if (hooks.length === 0) {
+                hooksListDiv.innerHTML = '<p>No webhooks configured yet.</p>';
                 return;
             }
-            webhooks.forEach(webhook => {
-                const webhookItem = document.createElement('div');
-                webhookItem.className = 'webhook-item';
-                webhookItem.innerHTML = `
-                    <div class="webhook-details">
-                        <strong class="text-lg">${webhook.name}</strong>
-                        <p class="text-gray-700">${webhook.url}</p>
-                        <p class="text-gray-600 text-sm">Schedule: <code>${webhook.schedule}</code></p>
+            hooks.forEach(hook => {
+                const hookItem = document.createElement('div');
+                hookItem.className = 'hook-item';
+                hookItem.innerHTML = `
+                    <div class="hook-details">
+                        <strong class="text-lg">${hook.name}</strong>
+                        <p class="text-gray-700">${hook.url}</p>
+                        <p class="text-gray-600 text-sm">Schedule: <code>${hook.schedule}</code></p>
                     </div>
-                    <div class="webhook-actions">
-                        <button class="delete-button" data-id="${webhook.id}">Delete</button>
+                    <div class="hook-actions">
+                        <button class="delete-button" data-id="${hook.id}">Delete</button>
                     </div>
                 `;
-                webhooksListDiv.appendChild(webhookItem);
+                hooksListDiv.appendChild(hookItem);
             });
 
-            // Attach event listeners for delete buttons
             document.querySelectorAll('.delete-button').forEach(button => {
                 button.addEventListener('click', async (event) => {
                     const idToDelete = event.target.dataset.id;
                     if (confirm(`Are you sure you want to delete "${idToDelete}"?`)) {
-                        await deleteWebhook(idToDelete);
+                        await deleteHook(idToDelete);
                     }
                 });
             });
         }
 
-        addWebhookForm.addEventListener('submit', async (event) => {
+        addHookForm.addEventListener('submit', async (event) => {
             event.preventDefault();
-            const formData = new FormData(addWebhookForm);
+            const formData = new FormData(addHookForm);
             const name = formData.get('name').trim();
             const url = formData.get('url').trim();
             const schedule = formData.get('schedule').trim();
@@ -166,16 +189,16 @@
                     throw new Error(`HTTP error! status: ${response.status} - ${errorText}`);
                 }
 
-                addWebhookForm.reset();
-                showMessage('Webhook added successfully! Remember to redeploy for changes to take effect.', 'success');
-                await fetchWebhooks(); // Refresh the list
+                addHookForm.reset();
+                showMessage('Webhook added successfully! Click "Trigger Project Redeploy" for changes to take effect.', 'success');
+                await fetchHooks(); // Refresh the list
             } catch (error) {
-                console.error('Error adding webhook:', error);
+                console.error('Error adding hook:', error);
                 showMessage(`Failed to add webhook: ${error.message}`, 'error');
             }
         });
 
-        async function deleteWebhook(id) {
+        async function deleteHook(id) {
             try {
                 const response = await fetch(`/hooks/${id}`, {
                     method: 'DELETE',
@@ -186,16 +209,43 @@
                     throw new Error(`HTTP error! status: ${response.status} - ${errorText}`);
                 }
 
-                showMessage('Webhook deleted successfully! Remember to redeploy for changes to take effect.', 'success');
-                await fetchWebhooks(); // Refresh the list
+                showMessage('Webhook deleted successfully! Click "Trigger Project Redeploy" for changes to take effect.', 'success');
+                await fetchHooks(); // Refresh the list
             } catch (error) {
-                console.error('Error deleting webhook:', error);
+                console.error('Error deleting hook:', error);
                 showMessage(`Failed to delete webhook: ${error.message}`, 'error');
             }
         }
 
+        // New event listener for the redeploy button
+        redeployButton.addEventListener('click', async () => {
+            if (confirm('Are you sure you want to trigger a redeployment? This will restart the application.')) {
+                redeployButton.disabled = true; // Disable button to prevent multiple clicks
+                redeployButton.textContent = 'Triggering Redeploy...';
+                try {
+                    const response = await fetch('/redeploy', {
+                        method: 'POST',
+                        // Basic Auth is handled by the browser for this origin
+                    });
+
+                    if (response.ok) {
+                        showMessage('Redeploy triggered successfully! New cron jobs will be active shortly.', 'success');
+                    } else {
+                        const errorText = await response.text();
+                        throw new Error(`HTTP error! status: ${response.status} - ${errorText}`);
+                    }
+                } catch (error) {
+                    console.error('Error triggering redeploy:', error);
+                    showMessage(`Failed to trigger redeploy: ${error.message}`, 'error');
+                } finally {
+                    redeployButton.disabled = false;
+                    redeployButton.textContent = 'Trigger Project Redeploy';
+                }
+            }
+        });
+
         // Initial fetch when the page loads
-        document.addEventListener('DOMContentLoaded', fetchWebhooks);
+        document.addEventListener('DOMContentLoaded', fetchHooks);
     </script>
 </body>
 </html>
