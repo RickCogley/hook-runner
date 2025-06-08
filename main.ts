@@ -21,27 +21,26 @@ const DD_ACCESS_TOKEN = Deno.env.get("DD_ACCESS_TOKEN");
 let INDEX_HTML_SIZE: number | null = null;
 const ENTRY_POINT_URL = `https://raw.githubusercontent.com/eSolia/hook-runner/refs/heads/main/main.ts`;
 const REPO_RAW_BASE_URL = `https://raw.githubusercontent.com/eSolia/hook-runner/refs/heads/main/`;
-const INDEX_HTML_RAW_URL = `${REPO_RAW_BASE_URL}static/index.html`;
+const INDEX_HTML_RAW_URL = `${REPO_RAW_BASE_URL}static/index.html`; // This URL is still needed for the 'url' property in assets
 
-// --- Initialization Function to get asset sizes ---
+// --- Initialization Function to get asset sizes by reading local files ---
 async function initializeAssetMetadata() {
-  console.log("Fetching asset metadata (e.g., index.html size)...");
+  console.log("Reading deployed asset metadata (e.g., index.html size)...");
   try {
-    const response = await fetch(INDEX_HTML_RAW_URL, { method: 'HEAD' });
-    if (response.ok && response.headers.has('content-length')) {
-      INDEX_HTML_SIZE = parseInt(response.headers.get('content-length')!, 10);
-      console.log(`index.html size: ${INDEX_HTML_SIZE} bytes`);
-    } else {
-      console.error(`Failed to get content-length for index.html: Status ${response.status}`);
-    }
+    const filePath = join(Deno.cwd(), "static", "index.html");
+    const fileContent = await Deno.readFile(filePath);
+    INDEX_HTML_SIZE = fileContent.byteLength;
+    console.log(`index.html size: ${INDEX_HTML_SIZE} bytes`);
   } catch (error) {
-    console.error("Error fetching index.html metadata:", error);
+    console.error("Error reading index.html locally:", error);
+    INDEX_HTML_SIZE = null; // Ensure it's null if there's an error
   }
 }
 
 // Call initialization functions
-await initializeAssetMetadata(); // Wait for this to complete before starting server/cron
-setupCronJobs(); // Setup cron jobs after initial setup
+// This will run when the Deno Deploy instance starts up
+await initializeAssetMetadata();
+setupCronJobs();
 
 if (!ADMIN_USERNAME || !ADMIN_PASSWORD) {
   console.warn("WARNING: WEBHOOK_ADMIN_USERNAME or WEBHOOK_ADMIN_PASSWORD environment variables are not set. The UI will not be password protected!");
@@ -50,7 +49,7 @@ if (!ADMIN_USERNAME || !ADMIN_PASSWORD) {
 if (!DD_PROJECT_ID || !DD_ACCESS_TOKEN) {
     console.warn("WARNING: DD_PROJECT_ID or DD_ACCESS_TOKEN environment variables are not set. Automated redeployments will not work!");
 } else if (INDEX_HTML_SIZE === null) {
-    console.warn("WARNING: Could not determine index.html size. Automated redeployments might fail.");
+    console.warn("WARNING: Could not determine index.html size by reading local file. Automated redeployments might fail.");
 }
 
 
@@ -133,8 +132,9 @@ async function triggerDenoDeployRedeploy(): Promise<boolean> {
         console.error("Cannot trigger redeploy: Project ID or Access Token is missing.");
         return false;
     }
+    // Updated check: now verifies if local file reading was successful
     if (INDEX_HTML_SIZE === null) {
-        console.error("Cannot trigger redeploy: index.html size is unknown. Please check logs for previous errors.");
+        console.error("Cannot trigger redeploy: index.html size is unknown (failed to read locally).");
         return false;
     }
 
@@ -149,13 +149,13 @@ async function triggerDenoDeployRedeploy(): Promise<boolean> {
                 'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-                entryPointUrl: ENTRY_POINT_URL, // Using global constant
+                entryPointUrl: ENTRY_POINT_URL,
                 assets: {
                     "static/index.html": {
                         path: "static/index.html",
-                        url: INDEX_HTML_RAW_URL, // Using global constant
+                        url: INDEX_HTML_RAW_URL,
                         kind: "file",
-                        size: INDEX_HTML_SIZE, // <--- THIS IS THE KEY CHANGE
+                        size: INDEX_HTML_SIZE, // Uses the size obtained from local file read
                     },
                 },
                 branch: 'main',
